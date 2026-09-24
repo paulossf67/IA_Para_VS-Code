@@ -11,6 +11,20 @@ import {
   SYSTEM_PROMPT,
 } from '../utils/ollama';
 import { selectFilesForContext, clearSelectedFiles } from '../utils/contextSelector';
+import { analyzeGitDiff, generateCommitMessage, validateBeforePush } from '../utils/gitIntegration';
+import { AdvancedContextManager, showContextGroupsUI } from '../utils/advancedContextManager';
+import { SnippetManager, showSnippetsUI } from '../utils/snippetManager';
+import { QualityScoreTracker } from '../utils/qualityScore';
+import { BugDetective, showBugDetectiveUI } from '../utils/bugDetective';
+import { SemanticSearcher } from '../utils/semanticSearch';
+import { showVoiceUI } from '../utils/voiceCommands';
+import { showDocGeneratorUI } from '../utils/docGenerator';
+import { showPerformanceProfilerUI } from '../utils/performanceProfiler';
+import { showGitHubPRReviewUI } from '../utils/githubPRReview';
+import { showLearningPathUI, LearningPathTracker } from '../utils/learningPaths';
+import { CodeGenetics } from '../utils/codeGenetics';
+import { showTeamCollaborationUI } from '../utils/teamCollaboration';
+import { showMarketplaceUI } from '../utils/localMarketplace';
 
 function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -271,4 +285,186 @@ ${prefix}
       })
     );
   }
+
+  // 🔗 GIT INTEGRATION: Analisar commit
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.analyzeCommit', async () => {
+      const analysis = await analyzeGitDiff();
+      if (analysis) {
+        await chatProvider.sendPrompt(
+          `Análise de Commit Realizada:\n\n**Qualidade:** ${analysis.quality}/100\n\n**Issues:** ${analysis.issues.join(', ')}\n\n**Sugestões:** ${analysis.suggestions.join(', ')}`,
+          'Análise de Commit'
+        );
+      }
+    })
+  );
+
+  // 🔗 GIT INTEGRATION: Gerar mensagem de commit
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.generateCommitMsg', async () => {
+      const message = await generateCommitMessage();
+      if (message) {
+        vscode.window.showInformationMessage(`Local AI: ${message}`);
+      }
+    })
+  );
+
+  // 🔗 GIT INTEGRATION: Validar antes de push
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.validateBeforePush', async () => {
+      await validateBeforePush();
+    })
+  );
+
+  // ⚙️ CONFIGURATION: Configurar provedor IA
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.configureAI', async () => {
+      const providers = ['ollama', 'claude', 'gpt', 'gemini'];
+      const picked = await vscode.window.showQuickPick(providers, {
+        placeHolder: 'Escolha o provedor de IA'
+      });
+
+      if (picked) {
+        await vscode.workspace
+          .getConfiguration('local-ai')
+          .update('aiProvider', picked, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Local AI: provedor alterado para ${picked}`);
+      }
+    })
+  );
+
+  // ============================================================
+  // 🚀 13 FEATURES FUTURAS
+  // ============================================================
+
+  // 1️⃣ ADVANCED CONTEXT MANAGER
+  if (storage) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.organizeContext', async () => {
+        await showContextGroupsUI(storage);
+      })
+    );
+  }
+
+  // 2️⃣ SNIPPET MANAGER
+  if (storage) {
+    const snippetManager = new SnippetManager(storage, context.extensionPath);
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.saveSnippet', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) return;
+        const code = editor.document.getText(editor.selection);
+        if (!code) return;
+
+        const name = await vscode.window.showInputBox({ placeHolder: 'Snippet name' });
+        if (name) {
+          const tags = await vscode.window.showInputBox({ placeHolder: 'Tags (comma-separated)' });
+          await snippetManager.createSnippet(
+            name,
+            code,
+            editor.document.languageId,
+            tags?.split(',').map((t) => t.trim()) || []
+          );
+          vscode.window.showInformationMessage(`✅ Snippet "${name}" salvo!`);
+        }
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.insertSnippet', async () => {
+        await showSnippetsUI(snippetManager, 'insert');
+      })
+    );
+  }
+
+  // 3️⃣ QUALITY SCORE
+  if (storage) {
+    const qualityTracker = new QualityScoreTracker(storage);
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.showQualityDashboard', async () => {
+        await qualityTracker.showDashboard();
+      })
+    );
+  }
+
+  // 4️⃣ BUG DETECTIVE
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.detectBugs', async () => {
+      const detective = new BugDetective();
+      await showBugDetectiveUI(detective);
+    })
+  );
+
+  // 5️⃣ SEMANTIC SEARCH
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.semanticSearch', async () => {
+      vscode.window.showInformationMessage('🔍 Semantic search coming soon');
+    })
+  );
+
+  // 6️⃣ VOICE COMMANDS
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.voiceCommand', async () => {
+      await showVoiceUI();
+    })
+  );
+
+  // 7️⃣ DOC GENERATOR
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.generateDocs', async () => {
+      await showDocGeneratorUI();
+    })
+  );
+
+  // 8️⃣ PERFORMANCE PROFILER
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.profilePerformance', async () => {
+      await showPerformanceProfilerUI();
+    })
+  );
+
+  // 9️⃣ GITHUB PR REVIEW
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.reviewPR', async () => {
+      await showGitHubPRReviewUI();
+    })
+  );
+
+  // 🔟 LEARNING PATHS
+  if (storage) {
+    const learningTracker = new LearningPathTracker(storage);
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.showLearningPaths', async () => {
+        await showLearningPathUI(learningTracker);
+      })
+    );
+  }
+
+  // 1️⃣1️⃣ CODE GENETICS
+  if (storage) {
+    const genetics = new CodeGenetics(storage);
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.showCodeGenetics', async () => {
+        await genetics.showTimeline();
+      })
+    );
+  }
+
+  // 1️⃣2️⃣ TEAM COLLABORATION
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.teamCollaboration', async () => {
+      await showTeamCollaborationUI();
+    })
+  );
+
+  // 1️⃣3️⃣ LOCAL MARKETPLACE
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.marketplace', async () => {
+      await showMarketplaceUI();
+    })
+  );
 }

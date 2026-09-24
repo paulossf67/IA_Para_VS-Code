@@ -3,26 +3,41 @@ import { ChatViewProvider } from './chat/ChatPanel';
 import { LocalAIInlineCompletionProvider } from './completion/InlineCompletionProvider';
 import { registerCommands } from './commands';
 import { checkOllamaAvailable, getConfig, isModelInstalled, listModels } from './utils/ollama';
+import { analyzeCodeOnSave } from './utils/autoReview';
+import { DashboardProvider } from './utils/dashboardProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Assistant ativado!');
 
-  // Provider do chat (webview na activity bar)
+  // ✅ FEATURE 1: Chat Provider
   const chatProvider = new ChatViewProvider(context.extensionUri, context.globalState);
-
   context.subscriptions.push(
     chatProvider,
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider, {
-      // Mantém a conversa na tela ao esconder/mostrar o painel
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
 
-  // Comandos
+  // ✅ FEATURE 2: Dashboard (Analytics)
+  const dashboardProvider = new DashboardProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(DashboardProvider.viewType, dashboardProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  // ✅ FEATURES 3-8: Commands (Explain, Refactor, Tests, Git, etc)
   registerCommands(context, chatProvider, context.globalState);
 
-  // Inline Completion (autocomplete) só em arquivos de verdade
-  // (evita disparar no painel de Output, no git, etc.)
+  // ✅ FEATURE 9: Auto Code Review (on save)
+  const enableAutoReview = vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true);
+  if (enableAutoReview) {
+    context.subscriptions.push(
+      vscode.workspace.onDidSaveTextDocument((doc) => void analyzeCodeOnSave(doc))
+    );
+  }
+
+  // ✅ FEATURE 10: Inline Completion (autocomplete)
   const inlineProvider = new LocalAIInlineCompletionProvider();
   context.subscriptions.push(
     vscode.languages.registerInlineCompletionItemProvider(
@@ -31,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Verifica Ollama e modelo pouco depois de iniciar
+  // Verificar setup do Ollama
   setTimeout(() => void checkSetup(), 2000);
 }
 
