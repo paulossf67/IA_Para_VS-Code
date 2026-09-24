@@ -78,6 +78,22 @@
       {
         "command": "local-ai.clearContextFiles",
         "title": "Local AI: Limpar Seleção de Arquivos"
+      },
+      {
+        "command": "local-ai.configureAI",
+        "title": "Local AI: Configurar Provedor IA"
+      },
+      {
+        "command": "local-ai.analyzeCommit",
+        "title": "Local AI: Analisar Commit"
+      },
+      {
+        "command": "local-ai.generateCommitMsg",
+        "title": "Local AI: Gerar Mensagem de Commit"
+      },
+      {
+        "command": "local-ai.validateBeforePush",
+        "title": "Local AI: Validar Antes de Push"
       }
     ],
     "menus": {
@@ -219,7 +235,23 @@
           "type": "number",
           "default": 10,
           "minimum": 1,
-          "description": "Tamanho máximo do histórico persistido em MB. Mensagens antigas são removidas automaticamente."
+          "description": "Tamanho máximo do histórico persistido em MB."
+        },
+        "local-ai.enableAutoReview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analisar código automaticamente ao salvar"
+        },
+        "local-ai.enableDashboard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostrar dashboard com métricas do projeto"
+        },
+        "local-ai.aiProvider": {
+          "type": "string",
+          "default": "ollama",
+          "enum": ["ollama", "claude", "gpt", "gemini"],
+          "description": "Provedor de IA a usar"
         }
       }
     },
@@ -238,6 +270,11 @@
           "type": "webview",
           "id": "local-ai.chatView",
           "name": "Chat"
+        },
+        {
+          "type": "webview",
+          "id": "local-ai.dashboard",
+          "name": "Dashboard"
         }
       ]
     }
