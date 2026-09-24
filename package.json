@@ -1,0 +1,261 @@
+{
+  "name": "local-ai-vscode",
+  "displayName": "Local AI Assistant",
+  "description": "Assistente de IA 100% local para VS Code (Ollama). Chat, autocomplete e comandos de código.",
+  "version": "0.2.0",
+  "publisher": "paulosergio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "ollama",
+    "local",
+    "copilot",
+    "chatgpt",
+    "llm"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "local-ai.openChat",
+        "title": "Local AI: Abrir Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "local-ai.explainCode",
+        "title": "Local AI: Explicar Código"
+      },
+      {
+        "command": "local-ai.generateDocs",
+        "title": "Local AI: Gerar Documentação"
+      },
+      {
+        "command": "local-ai.refactorCode",
+        "title": "Local AI: Refatorar Código"
+      },
+      {
+        "command": "local-ai.generateTests",
+        "title": "Local AI: Gerar Testes"
+      },
+      {
+        "command": "local-ai.fixCode",
+        "title": "Local AI: Corrigir Código"
+      },
+      {
+        "command": "local-ai.completeHere",
+        "title": "Local AI: Completar Aqui"
+      },
+      {
+        "command": "local-ai.selectModel",
+        "title": "Local AI: Escolher Modelo",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "local-ai.exportHistory",
+        "title": "Local AI: Exportar Histórico",
+        "icon": "$(export)"
+      },
+      {
+        "command": "local-ai.clearHistory",
+        "title": "Local AI: Limpar Histórico",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "local-ai.selectContextFiles",
+        "title": "Local AI: Selecionar Arquivos para Context"
+      },
+      {
+        "command": "local-ai.clearContextFiles",
+        "title": "Local AI: Limpar Seleção de Arquivos"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "local-ai.explainCode",
+          "group": "local-ai@1",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "local-ai.generateDocs",
+          "group": "local-ai@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "local-ai.refactorCode",
+          "group": "local-ai@3",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "local-ai.generateTests",
+          "group": "local-ai@4",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "local-ai.fixCode",
+          "group": "local-ai@5",
+          "when": "editorHasSelection"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "local-ai.openChat"
+        },
+        {
+          "command": "local-ai.explainCode"
+        },
+        {
+          "command": "local-ai.generateDocs"
+        },
+        {
+          "command": "local-ai.refactorCode"
+        },
+        {
+          "command": "local-ai.generateTests"
+        },
+        {
+          "command": "local-ai.fixCode"
+        },
+        {
+          "command": "local-ai.completeHere"
+        },
+        {
+          "command": "local-ai.selectModel"
+        },
+        {
+          "command": "local-ai.exportHistory"
+        },
+        {
+          "command": "local-ai.clearHistory"
+        },
+        {
+          "command": "local-ai.selectContextFiles"
+        },
+        {
+          "command": "local-ai.clearContextFiles"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "local-ai.selectModel",
+          "when": "view == local-ai.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "local-ai.openChat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "local-ai.completeHere",
+        "key": "ctrl+shift+space",
+        "mac": "cmd+shift+space"
+      }
+    ],
+    "configuration": {
+      "title": "Local AI",
+      "properties": {
+        "local-ai.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "URL da API do Ollama"
+        },
+        "local-ai.model": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Modelo a ser usado (ex: qwen2.5-coder:7b, deepseek-coder-v2:16b)"
+        },
+        "local-ai.enableInlineCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ativar autocomplete enquanto digita"
+        },
+        "local-ai.inlineCompletionDelay": {
+          "type": "number",
+          "default": 800,
+          "description": "Delay em ms antes de mostrar sugestão de autocomplete",
+          "minimum": 100
+        },
+        "local-ai.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "Máximo de tokens na resposta",
+          "minimum": 16
+        },
+        "local-ai.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Temperatura (0 = mais determinístico, 1 = mais criativo)",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "local-ai.numCtx": {
+          "type": "number",
+          "default": 8192,
+          "minimum": 1024,
+          "description": "Tamanho do contexto (em tokens) enviado ao Ollama. O padrão do Ollama é pequeno (2048–4096) e corta código longo. Valores maiores usam mais memória RAM/VRAM."
+        },
+        "local-ai.maxHistoryMessages": {
+          "type": "number",
+          "default": 20,
+          "minimum": 2,
+          "description": "Quantas mensagens anteriores do chat são enviadas ao modelo. As mais antigas são descartadas para não estourar o contexto."
+        },
+        "local-ai.maxHistorySize": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Tamanho máximo do histórico persistido em MB. Mensagens antigas são removidas automaticamente."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "local-ai",
+          "title": "Local AI",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "views": {
+      "local-ai": [
+        {
+          "type": "webview",
+          "id": "local-ai.chatView",
+          "name": "Chat"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository",
+    "test": "node ./out/test/runTest.js",
+    "test:unit": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "@vitest/ui": "^1.0.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}

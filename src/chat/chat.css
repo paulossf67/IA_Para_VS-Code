@@ -1,0 +1,183 @@
+:root {
+  --bg: var(--vscode-sideBar-background);
+  --fg: var(--vscode-foreground);
+  --input-bg: var(--vscode-input-background);
+  --input-fg: var(--vscode-input-foreground);
+  --input-border: var(--vscode-input-border, transparent);
+  --button-bg: var(--vscode-button-background);
+  --button-fg: var(--vscode-button-foreground);
+  --button-hover: var(--vscode-button-hoverBackground);
+  --button2-bg: var(--vscode-button-secondaryBackground);
+  --button2-fg: var(--vscode-button-secondaryForeground);
+  --button2-hover: var(--vscode-button-secondaryHoverBackground);
+  --user-bg: var(--vscode-button-background);
+  --assistant-bg: var(--vscode-editor-inactiveSelectionBackground);
+  --border: var(--vscode-panel-border);
+  --code-bg: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.12));
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--fg);
+  background: var(--bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  max-width: 95%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.user {
+  align-self: flex-end;
+  background: var(--user-bg);
+  color: var(--button-fg);
+}
+
+.user .code-block { color: var(--fg); }
+
+.assistant {
+  align-self: flex-start;
+  background: var(--assistant-bg);
+  border: 1px solid var(--border);
+}
+
+.error {
+  align-self: center;
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  color: var(--vscode-errorForeground, #ffb4b4);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #a33);
+}
+
+.typing::after {
+  content: '▍';
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink { 50% { opacity: 0; } }
+
+.stopped-note { opacity: 0.6; font-style: italic; font-size: 0.9em; }
+
+#input-area {
+  border-top: 1px solid var(--border);
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  background: var(--bg);
+}
+
+#input {
+  flex: 1;
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: inherit;
+  resize: none;
+  min-height: 40px;
+  max-height: 160px;
+}
+
+#input:focus { outline: 1px solid var(--vscode-focusBorder); }
+
+button {
+  background: var(--button-bg);
+  color: var(--button-fg);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+button:hover { background: var(--button-hover); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+#toolbar button { padding: 4px 10px; font-size: 12px; }
+
+#modelBtn {
+  margin-left: auto;
+  background: var(--button2-bg);
+  color: var(--button2-fg);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#modelBtn:hover { background: var(--button2-hover); }
+
+.code-block {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-header .lang { opacity: 0.75; margin-right: auto; }
+
+.code-header button {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--button2-bg);
+  color: var(--button2-fg);
+}
+
+.code-header button:hover { background: var(--button2-hover); }
+
+pre {
+  background: var(--code-bg);
+  padding: 10px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
+
+.inline-code {
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.md-h { font-weight: bold; font-size: 1.05em; }
