@@ -15,6 +15,7 @@ tsconfig.json
 **/*.ts
 node_modules/**
 Arquivos_md/**
+.github/**
 scripts/**
 vitest.config.*
 out/**/*.test.js
