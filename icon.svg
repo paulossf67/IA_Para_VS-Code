@@ -1,0 +1,45 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e1e2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f0f1a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="robot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ec9b0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#569cd6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+  
+  <!-- Robot head -->
+  <rect x="34" y="28" width="60" height="50" rx="12" fill="url(#robot)" opacity="0.9"/>
+  
+  <!-- Eyes -->
+  <circle cx="54" cy="48" r="6" fill="#1e1e2e"/>
+  <circle cx="74" cy="48" r="6" fill="#1e1e2e"/>
+  <circle cx="56" cy="46" r="2" fill="#4ec9b0"/>
+  <circle cx="76" cy="46" r="2" fill="#4ec9b0"/>
+  
+  <!-- Antenna -->
+  <rect x="63" y="14" width="2" height="14" fill="#569cd6"/>
+  <circle cx="64" cy="14" r="4" fill="#4ec9b0"/>
+  
+  <!-- Mouth/Speech -->
+  <rect x="50" y="64" width="28" height="4" rx="2" fill="#1e1e2e" opacity="0.5"/>
+  <rect x="54" y="65" width="8" height="2" rx="1" fill="#569cd6"/>
+  <rect x="66" y="65" width="6" height="2" rx="1" fill="#569cd6"/>
+  
+  <!-- Body -->
+  <rect x="28" y="82" width="72" height="32" rx="8" fill="url(#robot)" opacity="0.7"/>
+  
+  <!-- Code brackets on body -->
+  <text x="64" y="102" font-family="monospace" font-size="18" font-weight="bold" fill="#1e1e2e" text-anchor="middle" opacity="0.8">{ }</text>
+  
+  <!-- Accent dots -->
+  <circle cx="20" cy="20" r="3" fill="#4ec9b0" opacity="0.5"/>
+  <circle cx="108" cy="108" r="3" fill="#569cd6" opacity="0.5"/>
+  <circle cx="20" cy="108" r="2" fill="#4ec9b0" opacity="0.3"/>
+  <circle cx="108" cy="20" r="2" fill="#569cd6" opacity="0.3"/>
+</svg>

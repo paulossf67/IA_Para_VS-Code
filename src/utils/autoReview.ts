@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { chat } from './ollama';
+import { chat, getConfig } from './ollama';
 
 export interface CodeIssue {
   line: number;
@@ -10,11 +10,17 @@ export interface CodeIssue {
 
 const DIAGNOSTIC_COLLECTION = vscode.languages.createDiagnosticCollection('local-ai');
 
+function getCharBudget(): number {
+  const { numCtx } = getConfig();
+  return Math.max(2000, Math.floor(numCtx * 0.3 * 3.5)); // 30% do contexto para auto-review
+}
+
 export async function analyzeCodeOnSave(document: vscode.TextDocument): Promise<void> {
   if (!shouldAnalyze(document)) return;
 
   const code = document.getText();
-  const issues = await findCodeIssues(code, document.languageId);
+  const budget = getCharBudget();
+  const issues = await findCodeIssues(code, document.languageId, budget);
 
   if (issues.length === 0) {
     DIAGNOSTIC_COLLECTION.set(document.uri, []);
@@ -47,14 +53,16 @@ function shouldAnalyze(document: vscode.TextDocument): boolean {
   return codeLanguages.includes(document.languageId);
 }
 
-async function findCodeIssues(code: string, language: string): Promise<CodeIssue[]> {
+async function findCodeIssues(code: string, language: string, budget: number): Promise<CodeIssue[]> {
   try {
+    const slice = code.slice(0, budget);
+    
     const prompt = `Analise este código ${language} brevemente.
     Retorne APENAS issues críticos em JSON: [{"line": N, "severity": "error|warning", "message": "...", "suggestion": "..."}]
 
 Código:
 \`\`\`${language}
-${code.slice(0, 1000)}
+${slice}
 \`\`\``;
 
     const response = await chat(

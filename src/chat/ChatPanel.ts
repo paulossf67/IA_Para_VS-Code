@@ -8,7 +8,9 @@ import {
   OllamaMessage,
   SYSTEM_PROMPT,
 } from '../utils/ollama';
-import { getProjectContext } from '../utils/projectContext';
+import { getProjectContext, clearContextCache } from '../utils/projectContext';
+import { getSelectedFilesConfig } from '../utils/contextSelector';
+import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';
 
 type WebviewMessage = { type: string; [key: string]: unknown };
@@ -34,8 +36,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private lastEditor?: vscode.TextEditor;
   private disposables: vscode.Disposable[] = [];
 
+  private contextManager: AdvancedContextManager;
+
   constructor(private readonly _extensionUri: vscode.Uri, private storage: vscode.Memento) {
     this.lastEditor = vscode.window.activeTextEditor;
+    this.contextManager = new AdvancedContextManager(storage);
     this.loadHistoryFromStorage();
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -45,7 +50,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         if (e.affectsConfiguration('local-ai.model')) {
           this.post({ type: 'model', name: getConfig().model });
         }
-      })
+        // numCtx define o orçamento do contexto; mudou, o cache não vale mais
+        if (e.affectsConfiguration('local-ai.numCtx')) clearContextCache();
+      }),
+      // Sem isso a IA analisaria a versão anterior do arquivo recém-salvo
+      vscode.workspace.onDidSaveTextDocument(() => clearContextCache())
     );
   }
 
@@ -80,10 +89,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   private loadHistoryFromStorage() {
-    const saved = this.storage.get<OllamaMessage[]>('chatHistory', []);
-    if (saved.length > 0) {
+    // ?? [] protege contra storage corrompido (null gravado por versão anterior)
+    const saved = this.storage.get<OllamaMessage[]>('chatHistory', []) ?? [];
+    if (Array.isArray(saved) && saved.length > 0) {
       this.messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...saved];
     }
+  }
+
+  /** Retorna histórico para indexação semântica */
+  public getHistory(): { role: 'user' | 'assistant'; content: string }[] {
+    return this.messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
   }
 
   public resolveWebviewView(
@@ -210,12 +227,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return;
     }
 
-    // Injeta contexto do projeto se disponível
+    // Injeta o conteúdo dos arquivos do projeto
     let enrichedText = text;
     if (vscode.workspace.workspaceFolders) {
-      const context = await getProjectContext();
-      if (context) {
-        enrichedText = `${text}\n\n---\n### Contexto do Projeto:\n${context}`;
+      // 1. Tenta usar grupo de contexto selecionado (AdvancedContextManager)
+      const groupContext = await this.contextManager.getContextString();
+      
+      if (groupContext) {
+        enrichedText = `${text}\n\n---\n${groupContext}`;
+        this.post({
+          type: 'contextInfo',
+          files: 0,
+          chars: groupContext.length,
+          group: true,
+        });
+      } else {
+        // 2. Fallback: contexto automático (projectContext.ts)
+        const context = await getProjectContext(
+          getSelectedFilesConfig(this.storage),
+          this.lastEditor?.document.uri.fsPath
+        );
+        if (context) {
+          enrichedText = `${text}\n\n---\n${context.text}`;
+          this.post({
+            type: 'contextInfo',
+            files: context.includedFiles.length,
+            chars: context.totalChars,
+          });
+        }
       }
     }
 
@@ -223,7 +262,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: 'userMessage', text });
     this.post({ type: 'startAssistant' });
 
-    this.abortController = new AbortController();
+    const abortController = new AbortController();
+    this.abortController = abortController;
     let fullResponse = '';
     this.streamingText = '';
 
@@ -240,7 +280,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
               this.streamingText = fullResponse;
               this.post({ type: 'chunk', text: chunk });
             },
-            this.abortController.signal
+            abortController.signal
           ),
         3,
         1000
@@ -566,6 +606,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         case 'userMessage':
           appendMessage(data.text, 'user', true);
           break;
+
+        case 'contextInfo': {
+          const info = document.createElement('div');
+          info.className = 'context-note';
+          info.textContent =
+            data.files + ' arquivo(s) do projeto enviados como contexto';
+          messagesEl.appendChild(info);
+          scrollToBottom();
+          break;
+        }
 
         case 'startAssistant':
           currentAssistantText = '';

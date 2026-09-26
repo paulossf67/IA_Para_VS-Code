@@ -43,7 +43,7 @@ export class TeamCollaborationManager {
   }
 
   async getWorkspace(name: string): Promise<TeamWorkspace | null> {
-    return this.storage.get(`teamWorkspace.${name}`);
+    return this.storage.get<TeamWorkspace>(`teamWorkspace.${name}`) ?? null;
   }
 
   async exportWorkspace(workspaceName: string): Promise<string> {

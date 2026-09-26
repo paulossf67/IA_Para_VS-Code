@@ -11,15 +11,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ✅ FEATURE 1: Chat Provider
   const chatProvider = new ChatViewProvider(context.extensionUri, context.globalState);
+  (globalThis as any).__localAIChatProvider = chatProvider;
   context.subscriptions.push(
     chatProvider,
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider, {
       webviewOptions: { retainContextWhenHidden: true },
-    })
+    }),
+    { dispose: () => { delete (globalThis as any).__localAIChatProvider; } }
   );
 
   // ✅ FEATURE 2: Dashboard (Analytics)
-  const dashboardProvider = new DashboardProvider(context.extensionUri);
+  const dashboardProvider = new DashboardProvider(context.extensionUri, context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(DashboardProvider.viewType, dashboardProvider, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -30,12 +32,16 @@ export function activate(context: vscode.ExtensionContext) {
   registerCommands(context, chatProvider, context.globalState);
 
   // ✅ FEATURE 9: Auto Code Review (on save)
-  const enableAutoReview = vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true);
-  if (enableAutoReview) {
-    context.subscriptions.push(
-      vscode.workspace.onDidSaveTextDocument((doc) => void analyzeCodeOnSave(doc))
-    );
-  }
+  // Debounce: salvar em sequência (Ctrl+S repetido, save-all) só dispara uma análise.
+  let reviewTimer: NodeJS.Timeout | undefined;
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      if (!vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) return;
+      if (reviewTimer) clearTimeout(reviewTimer);
+      reviewTimer = setTimeout(() => void analyzeCodeOnSave(doc), 1500);
+    }),
+    { dispose: () => reviewTimer && clearTimeout(reviewTimer) }
+  );
 
   // ✅ FEATURE 10: Inline Completion (autocomplete)
   const inlineProvider = new LocalAIInlineCompletionProvider();

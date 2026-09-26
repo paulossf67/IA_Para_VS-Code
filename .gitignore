@@ -5,3 +5,5 @@ out/
 *.log
 .DS_Store
 Thumbs.db
+vitest.config.js
+vitest.config.js.map

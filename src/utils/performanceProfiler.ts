@@ -78,7 +78,7 @@ Return JSON array: [{"line": 1, "issue": "...", "complexity": "O(...)", "suggest
         const match = response.match(/\[[\s\S]*\]/);
         if (match) {
           const parsed = JSON.parse(match[0]);
-          return parsed.map((p: any) => ({
+          return parsed.map((p: any): PerformanceIssue => ({
             location: `Line ${p.line}`,
             line: p.line,
             severity: 'warning',

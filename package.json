@@ -2,9 +2,17 @@
   "name": "local-ai-vscode",
   "displayName": "Local AI Assistant",
   "description": "Assistente de IA 100% local para VS Code (Ollama). Chat, autocomplete e comandos de código.",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "publisher": "paulosergio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paulosergio/local-ai-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/paulosergio/local-ai-vscode/issues"
+  },
+  "homepage": "https://github.com/paulosergio/local-ai-vscode#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -94,6 +102,41 @@
       {
         "command": "local-ai.validateBeforePush",
         "title": "Local AI: Validar Antes de Push"
+      },
+      {
+        "command": "local-ai.organizeContext",
+        "title": "Local AI: Organizar Grupos de Context"
+      },
+      {
+        "command": "local-ai.previewContext",
+        "title": "Local AI: Ver Contexto Enviado à IA"
+      },
+      {
+        "command": "local-ai.saveSnippet",
+        "title": "Local AI: Salvar Snippet"
+      },
+      {
+        "command": "local-ai.insertSnippet",
+        "title": "Local AI: Inserir Snippet"
+      },
+      {
+        "command": "local-ai.migrateContextSelection",
+        "title": "Local AI: Migrar Seleção Antiga de Context"
+      },
+      {
+        "command": "local-ai.semanticSearch",
+        "title": "Local AI: Busca Semântica",
+        "icon": "$(search)"
+      },
+      {
+        "command": "local-ai.indexProject",
+        "title": "Local AI: Indexar Projeto para Busca",
+        "icon": "$(database-add)"
+      },
+      {
+        "command": "local-ai.codeGenetics",
+        "title": "Local AI: Evolução do Código (Genetics)",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -160,6 +203,18 @@
         },
         {
           "command": "local-ai.clearContextFiles"
+        },
+        {
+          "command": "local-ai.migrateContextSelection"
+        },
+        {
+          "command": "local-ai.semanticSearch"
+        },
+        {
+          "command": "local-ai.indexProject"
+        },
+        {
+          "command": "local-ai.codeGenetics"
         }
       ],
       "view/title": [
@@ -252,6 +307,28 @@
           "default": "ollama",
           "enum": ["ollama", "claude", "gpt", "gemini"],
           "description": "Provedor de IA a usar"
+        },
+        "local-ai.githubToken": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Personal Access Token do GitHub, usado pelo review de Pull Requests. Fica salvo nas configurações do VS Code."
+        },
+        "local-ai.enableSemanticSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Habilitar busca semântica com embeddings (requer modelo nomic-embed-text no Ollama)"
+        },
+        "local-ai.embeddingModel": {
+          "type": "string",
+          "default": "nomic-embed-text",
+          "description": "Modelo de embeddings no Ollama (ex: nomic-embed-text, all-minilm)"
+        },
+        "local-ai.similarityThreshold": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0.1,
+          "maximum": 0.9,
+          "description": "Limiar de similaridade para busca semântica (0.1-0.9)"
         }
       }
     },
@@ -281,7 +358,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/copy-assets.js",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --allow-missing-repository",
     "test": "node ./out/test/runTest.js",

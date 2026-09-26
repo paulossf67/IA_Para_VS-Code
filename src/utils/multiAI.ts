@@ -4,15 +4,18 @@ export type AIProvider = 'ollama' | 'claude' | 'gpt' | 'gemini';
 
 export interface AIConfig {
   provider: AIProvider;
-  apiKey?: string;
   model: string;
   baseUrl?: string;
   maxTokens: number;
 }
 
-const STORAGE_KEY = 'localAI_aiConfig';
+const CONFIG_KEY = 'localAI_aiConfig';
+const API_KEY_SECRET = 'localAI_apiKey';
 
-export async function configureAIProvider(storage: vscode.Memento): Promise<AIConfig | null> {
+export async function configureAIProvider(
+  storage: vscode.Memento,
+  secrets: vscode.SecretStorage
+): Promise<AIConfig | null> {
   const providers = [
     { label: '🦙 Ollama (Local)', value: 'ollama', description: 'Roda localmente, sem dados na nuvem' },
     { label: '🧠 Claude (API)', value: 'claude', description: 'Melhor qualidade, mas pago' },
@@ -32,7 +35,6 @@ export async function configureAIProvider(storage: vscode.Memento): Promise<AICo
     maxTokens: 1024,
   };
 
-  // Se não for Ollama, pedir API key
   if (picked.value !== 'ollama') {
     const apiKey = await vscode.window.showInputBox({
       prompt: `Cole sua chave API ${picked.label}`,
@@ -40,9 +42,9 @@ export async function configureAIProvider(storage: vscode.Memento): Promise<AICo
     });
 
     if (!apiKey) return null;
-    config.apiKey = apiKey;
 
-    // Selecionar modelo
+    await secrets.store(API_KEY_SECRET, apiKey);
+
     const models = await listModelsForProvider(picked.value as AIProvider, apiKey);
     const selectedModel = await vscode.window.showQuickPick(models, {
       placeHolder: 'Escolha modelo',
@@ -52,49 +54,53 @@ export async function configureAIProvider(storage: vscode.Memento): Promise<AICo
     config.model = selectedModel;
   } else {
     config.model = 'qwen2.5-coder:7b';
+    await secrets.delete(API_KEY_SECRET);
   }
 
-  await storage.update(STORAGE_KEY, config);
+  await storage.update(CONFIG_KEY, config);
   vscode.window.showInformationMessage(`✅ Provedor IA: ${picked.label}`);
 
   return config;
 }
 
-async function listModelsForProvider(provider: AIProvider, apiKey: string): Promise<string[]> {
-  try {
-    switch (provider) {
-      case 'claude':
-        return ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'];
-      case 'gpt':
-        return ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'];
-      case 'gemini':
-        return ['gemini-pro', 'gemini-pro-vision'];
-      default:
-        return [];
-    }
-  } catch {
-    return [];
+async function listModelsForProvider(provider: AIProvider, _apiKey: string): Promise<string[]> {
+  switch (provider) {
+    case 'claude':
+      return ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'];
+    case 'gpt':
+      return ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+    case 'gemini':
+      return ['gemini-pro', 'gemini-pro-vision'];
+    default:
+      return [];
   }
 }
 
 export async function chatWithAI(
-  config: AIConfig | null,
+  storage: vscode.Memento,
+  secrets: vscode.SecretStorage,
   messages: { role: string; content: string }[],
   options?: { maxTokens?: number; temperature?: number }
 ): Promise<string> {
+  const config = getAIConfig(storage);
   if (!config) {
-    throw new Error('Nenhum provedor de IA configurado');
+    throw new Error('Nenhum provedor de IA configurado. Rode "Local AI: Configurar Provedor IA"');
+  }
+
+  const apiKey = config.provider !== 'ollama' ? await secrets.get(API_KEY_SECRET) : undefined;
+  if (config.provider !== 'ollama' && !apiKey) {
+    throw new Error('API key não encontrada. Reconfigure o provedor.');
   }
 
   switch (config.provider) {
     case 'ollama':
       return chatOllama(messages, options);
     case 'claude':
-      return chatClaude(config.apiKey!, config.model, messages, options);
+      return chatClaude(apiKey!, config.model, messages, options);
     case 'gpt':
-      return chatGPT(config.apiKey!, config.model, messages, options);
+      return chatGPT(apiKey!, config.model, messages, options);
     case 'gemini':
-      return chatGemini(config.apiKey!, config.model, messages, options);
+      return chatGemini(apiKey!, config.model, messages, options);
     default:
       throw new Error(`Provedor não suportado: ${config.provider}`);
   }
@@ -188,10 +194,11 @@ async function chatGemini(
 }
 
 export function getAIConfig(storage: vscode.Memento): AIConfig | null {
-  return storage.get<AIConfig>(STORAGE_KEY, null);
+  return storage.get<AIConfig>(CONFIG_KEY) ?? null;
 }
 
-export async function resetAIConfig(storage: vscode.Memento): Promise<void> {
-  await storage.update(STORAGE_KEY, null);
+export async function resetAIConfig(storage: vscode.Memento, secrets: vscode.SecretStorage): Promise<void> {
+  await storage.update(CONFIG_KEY, null);
+  await secrets.delete(API_KEY_SECRET);
   vscode.window.showInformationMessage('Configuração de IA resetada');
 }

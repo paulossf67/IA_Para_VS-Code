@@ -10,21 +10,15 @@ import {
   FimNotSupportedError,
   SYSTEM_PROMPT,
 } from '../utils/ollama';
-import { selectFilesForContext, clearSelectedFiles } from '../utils/contextSelector';
+import { getProjectContext } from '../utils/projectContext';
+import { getSelectedFilesConfig } from '../utils/contextSelector';
+import { migrateFromContextSelector } from '../utils/advancedContextManager';
 import { analyzeGitDiff, generateCommitMessage, validateBeforePush } from '../utils/gitIntegration';
+import { configureAIProvider } from '../utils/multiAI';
 import { AdvancedContextManager, showContextGroupsUI } from '../utils/advancedContextManager';
 import { SnippetManager, showSnippetsUI } from '../utils/snippetManager';
-import { QualityScoreTracker } from '../utils/qualityScore';
-import { BugDetective, showBugDetectiveUI } from '../utils/bugDetective';
 import { SemanticSearcher } from '../utils/semanticSearch';
-import { showVoiceUI } from '../utils/voiceCommands';
-import { showDocGeneratorUI } from '../utils/docGenerator';
-import { showPerformanceProfilerUI } from '../utils/performanceProfiler';
-import { showGitHubPRReviewUI } from '../utils/githubPRReview';
-import { showLearningPathUI, LearningPathTracker } from '../utils/learningPaths';
 import { CodeGenetics } from '../utils/codeGenetics';
-import { showTeamCollaborationUI } from '../utils/teamCollaboration';
-import { showMarketplaceUI } from '../utils/localMarketplace';
 
 function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -270,18 +264,115 @@ ${prefix}
     })
   );
 
-  // Selecionar arquivos para context
+  // Selecionar arquivos para context (novo: usa AdvancedContextManager)
   if (storage) {
     context.subscriptions.push(
       vscode.commands.registerCommand('local-ai.selectContextFiles', async () => {
-        await selectFilesForContext(storage);
+        const manager = new AdvancedContextManager(storage);
+        await manager.createGroupFromQuickPick(storage);
       })
     );
 
-    // Limpar seleção de arquivos
+    // Limpar seleção de arquivos = remover grupo "Seleção Manual"
     context.subscriptions.push(
       vscode.commands.registerCommand('local-ai.clearContextFiles', async () => {
-        await clearSelectedFiles(storage);
+        const manager = new AdvancedContextManager(storage);
+        const config = await manager.loadConfig();
+        const manualGroup = config.groups.find(g => g.tags.includes('migrado') || g.name === 'Seleção Manual');
+        if (manualGroup) {
+          await manager.deleteGroup(manualGroup.id);
+          vscode.window.showInformationMessage('Local AI: seleção manual removida');
+        } else {
+          vscode.window.showInformationMessage('Nenhuma seleção manual para limpar');
+        }
+      })
+    );
+
+    // Migrar seleção antiga (contextSelector) para AdvancedContextManager
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.migrateContextSelection', async () => {
+        const count = await migrateFromContextSelector(storage);
+        if (count > 0) {
+          vscode.window.showInformationMessage(`✅ ${count} arquivos migrados para AdvancedContextManager`);
+        } else {
+          vscode.window.showInformationMessage('Nenhuma seleção antiga para migrar');
+        }
+      })
+    );
+
+    // 🔍 SEMANTIC SEARCH: Indexar projeto
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.indexProject', async () => {
+        const config = vscode.workspace.getConfiguration('local-ai');
+        if (!config.get('enableSemanticSearch', true)) {
+          vscode.window.showWarningMessage('Busca semântica desabilitada. Ative em Settings > local-ai.enableSemanticSearch');
+          return;
+        }
+
+        const searcher = new SemanticSearcher(context.globalState, context);
+        await searcher.initialize();
+
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Indexando projeto...', cancellable: true },
+          async (progress, token) => {
+            token.onCancellationRequested(() => searcher.cancelIndexing());
+
+            // Index chat history
+            const chatProvider = (globalThis as any).__localAIChatProvider;
+            if (chatProvider && typeof chatProvider.getHistory === 'function') {
+              const history = chatProvider.getHistory();
+              if (history.length > 0) {
+                progress.report({ message: 'Indexando histórico do chat...', increment: 20 });
+                await searcher.indexChatHistory(history);
+              }
+            }
+
+            // Index project files
+            progress.report({ message: 'Indexando arquivos do projeto...', increment: 40 });
+            await searcher.indexProjectFiles(context.globalState);
+
+            const stats = searcher.getIndexStats();
+            vscode.window.showInformationMessage(
+              `✅ Indexação completa: ${stats.total} itens (${stats.chat} chat + ${stats.files} arquivos)`
+            );
+          }
+        );
+      })
+    );
+
+    // 🔍 SEMANTIC SEARCH: Buscar
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.semanticSearch', async () => {
+        const config = vscode.workspace.getConfiguration('local-ai');
+        if (!config.get('enableSemanticSearch', true)) {
+          vscode.window.showWarningMessage('Busca semântica desabilitada. Ative em Settings > local-ai.enableSemanticSearch');
+          return;
+        }
+
+        const searcher = new SemanticSearcher(context.globalState, context);
+        await searcher.initialize();
+
+        const stats = searcher.getIndexStats();
+        if (stats.total === 0) {
+          const action = await vscode.window.showInformationMessage(
+            'Índice vazio. Deseja indexar o projeto primeiro?',
+            'Indexar agora'
+          );
+          if (action === 'Indexar agora') {
+            await vscode.commands.executeCommand('local-ai.indexProject');
+          }
+          return;
+        }
+
+        await searcher.showSearchUI();
+      })
+    );
+
+    // 🧬 CODE GENETICS: Evolução do código
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.codeGenetics', async () => {
+        const genetics = new CodeGenetics(context);
+        await genetics.showEvolutionUI();
       })
     );
   }
@@ -319,17 +410,7 @@ ${prefix}
   // ⚙️ CONFIGURATION: Configurar provedor IA
   context.subscriptions.push(
     vscode.commands.registerCommand('local-ai.configureAI', async () => {
-      const providers = ['ollama', 'claude', 'gpt', 'gemini'];
-      const picked = await vscode.window.showQuickPick(providers, {
-        placeHolder: 'Escolha o provedor de IA'
-      });
-
-      if (picked) {
-        await vscode.workspace
-          .getConfiguration('local-ai')
-          .update('aiProvider', picked, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage(`Local AI: provedor alterado para ${picked}`);
-      }
+      await configureAIProvider(context.globalState, context.secrets);
     })
   );
 
@@ -344,11 +425,42 @@ ${prefix}
         await showContextGroupsUI(storage);
       })
     );
+
+    // Mostra exatamente o que é enviado ao modelo como contexto do projeto
+    context.subscriptions.push(
+      vscode.commands.registerCommand('local-ai.previewContext', async () => {
+        const ctx = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Montando contexto...' },
+          () =>
+            getProjectContext(
+              getSelectedFilesConfig(storage),
+              vscode.window.activeTextEditor?.document.uri.fsPath
+            )
+        );
+
+        if (!ctx) {
+          vscode.window.showWarningMessage(
+            'Nenhum arquivo de código encontrado para o contexto. Abra uma pasta de projeto.'
+          );
+          return;
+        }
+
+        const doc = await vscode.workspace.openTextDocument({
+          language: 'markdown',
+          content:
+            `<!-- ${ctx.includedFiles.length} arquivo(s), ${ctx.totalChars} caracteres.\n` +
+            `     ${ctx.listedOnly} arquivo(s) entraram só como nome.\n` +
+            `     Ajuste o tamanho em Settings > local-ai.numCtx -->\n\n${ctx.text}`,
+        });
+        await vscode.window.showTextDocument(doc, { preview: false });
+      })
+    );
   }
 
   // 2️⃣ SNIPPET MANAGER
   if (storage) {
-    const snippetManager = new SnippetManager(storage, context.extensionPath);
+    // globalStorage sobrevive a updates da extensão; extensionPath é sobrescrito
+    const snippetManager = new SnippetManager(storage, context.globalStorageUri.fsPath);
 
     context.subscriptions.push(
       vscode.commands.registerCommand('local-ai.saveSnippet', async () => {
@@ -377,94 +489,4 @@ ${prefix}
       })
     );
   }
-
-  // 3️⃣ QUALITY SCORE
-  if (storage) {
-    const qualityTracker = new QualityScoreTracker(storage);
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand('local-ai.showQualityDashboard', async () => {
-        await qualityTracker.showDashboard();
-      })
-    );
-  }
-
-  // 4️⃣ BUG DETECTIVE
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.detectBugs', async () => {
-      const detective = new BugDetective();
-      await showBugDetectiveUI(detective);
-    })
-  );
-
-  // 5️⃣ SEMANTIC SEARCH
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.semanticSearch', async () => {
-      vscode.window.showInformationMessage('🔍 Semantic search coming soon');
-    })
-  );
-
-  // 6️⃣ VOICE COMMANDS
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.voiceCommand', async () => {
-      await showVoiceUI();
-    })
-  );
-
-  // 7️⃣ DOC GENERATOR
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.generateDocs', async () => {
-      await showDocGeneratorUI();
-    })
-  );
-
-  // 8️⃣ PERFORMANCE PROFILER
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.profilePerformance', async () => {
-      await showPerformanceProfilerUI();
-    })
-  );
-
-  // 9️⃣ GITHUB PR REVIEW
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.reviewPR', async () => {
-      await showGitHubPRReviewUI();
-    })
-  );
-
-  // 🔟 LEARNING PATHS
-  if (storage) {
-    const learningTracker = new LearningPathTracker(storage);
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand('local-ai.showLearningPaths', async () => {
-        await showLearningPathUI(learningTracker);
-      })
-    );
-  }
-
-  // 1️⃣1️⃣ CODE GENETICS
-  if (storage) {
-    const genetics = new CodeGenetics(storage);
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand('local-ai.showCodeGenetics', async () => {
-        await genetics.showTimeline();
-      })
-    );
-  }
-
-  // 1️⃣2️⃣ TEAM COLLABORATION
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.teamCollaboration', async () => {
-      await showTeamCollaborationUI();
-    })
-  );
-
-  // 1️⃣3️⃣ LOCAL MARKETPLACE
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.marketplace', async () => {
-      await showMarketplaceUI();
-    })
-  );
 }

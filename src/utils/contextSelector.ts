@@ -51,7 +51,7 @@ export async function selectFilesForContext(storage: vscode.Memento): Promise<Se
 }
 
 export function getSelectedFilesConfig(storage: vscode.Memento): SelectedFilesConfig | null {
-  return storage.get<SelectedFilesConfig>(STORAGE_KEY, null);
+  return storage.get<SelectedFilesConfig>(STORAGE_KEY) ?? null;
 }
 
 export async function clearSelectedFiles(storage: vscode.Memento): Promise<void> {

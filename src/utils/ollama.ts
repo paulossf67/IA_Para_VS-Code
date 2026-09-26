@@ -27,6 +27,7 @@ export interface LocalAIConfig {
   temperature: number;
   numCtx: number;
   maxHistoryMessages: number;
+  maxHistorySize: number;
 }
 
 /**
@@ -42,6 +43,7 @@ export function getConfig(): LocalAIConfig {
     temperature: config.get<number>('temperature') ?? 0.2,
     numCtx: config.get<number>('numCtx') ?? 8192,
     maxHistoryMessages: config.get<number>('maxHistoryMessages') ?? 20,
+    maxHistorySize: config.get<number>('maxHistorySize') ?? 10,
   };
 }
 
@@ -304,6 +306,52 @@ export function stripCodeFences(text: string): string {
   let result = text.replace(/^\s*```[\w+#.-]*[ \t]*\r?\n?/, '');
   result = result.replace(/\r?\n?```\s*$/, '');
   return result;
+}
+
+/**
+ * Embeddings via Ollama (ex: nomic-embed-text)
+ */
+export interface EmbeddingResponse {
+  embedding: number[];
+}
+
+export async function generateEmbedding(
+  text: string,
+  options?: { model?: string; signal?: AbortSignal }
+): Promise<number[]> {
+  const config = getConfig();
+
+  const body = {
+    model: options?.model || 'nomic-embed-text',
+    prompt: text,
+  };
+
+  const response = await fetch(`${config.url}/api/embeddings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Ollama embeddings error ${response.status}: ${text}`);
+  }
+
+  const data = (await response.json()) as EmbeddingResponse;
+  return data.embedding || [];
+}
+
+export async function generateEmbeddingsBatch(
+  texts: string[],
+  options?: { model?: string; signal?: AbortSignal }
+): Promise<number[][]> {
+  const results: number[][] = [];
+  for (const text of texts) {
+    if (options?.signal?.aborted) break;
+    results.push(await generateEmbedding(text, options));
+  }
+  return results;
 }
 
 /**

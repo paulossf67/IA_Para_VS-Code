@@ -69,11 +69,17 @@ export class QualityScoreTracker {
 
     const averageScore = weeklyMetrics.reduce((acc, m) => acc + m.autoScore, 0) / weeklyMetrics.length;
 
-    // Calculate trend
+    // Calculate trend (needs at least 2 entries to have two halves)
     const mid = Math.floor(weeklyMetrics.length / 2);
-    const firstHalf = weeklyMetrics.slice(0, mid).reduce((acc, m) => acc + m.autoScore, 0) / mid;
-    const secondHalf = weeklyMetrics.slice(mid).reduce((acc, m) => acc + m.autoScore, 0) / (weeklyMetrics.length - mid);
-    const trend = ((secondHalf - firstHalf) / firstHalf) * 100;
+    let trend = 0;
+    if (mid > 0) {
+      const firstHalf = weeklyMetrics.slice(0, mid).reduce((acc, m) => acc + m.autoScore, 0) / mid;
+      const secondHalf =
+        weeklyMetrics.slice(mid).reduce((acc, m) => acc + m.autoScore, 0) / (weeklyMetrics.length - mid);
+      if (firstHalf > 0) {
+        trend = ((secondHalf - firstHalf) / firstHalf) * 100;
+      }
+    }
 
     // Top and bottom categories
     const byCategory: { [key: string]: number[] } = {};

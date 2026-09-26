@@ -37,7 +37,8 @@ export class DocumentationGenerator {
       description = pkg.description || description;
     }
 
-    const files = fs.readdirSync(path.join(workspaceDir, 'src')).slice(0, 10);
+    const srcDir = path.join(workspaceDir, 'src');
+    const files = fs.existsSync(srcDir) ? fs.readdirSync(srcDir).slice(0, 10) : [];
 
     const [readme, contributing, architecture, api] = await Promise.all([
       this.generateReadme(projectName, description, files),
@@ -82,6 +83,18 @@ export async function showDocGeneratorUI(): Promise<void> {
   if (!workspaceFolder) {
     vscode.window.showErrorMessage('No workspace folder open');
     return;
+  }
+
+  const targets = ['README.md', 'CONTRIBUTING.md', 'ARCHITECTURE.md', 'API.md'];
+  const existing = targets.filter((f) => fs.existsSync(path.join(workspaceFolder.uri.fsPath, f)));
+
+  if (existing.length > 0) {
+    const answer = await vscode.window.showWarningMessage(
+      `Isso vai SOBRESCREVER: ${existing.join(', ')}. Continuar?`,
+      { modal: true },
+      'Sobrescrever'
+    );
+    if (answer !== 'Sobrescrever') return;
   }
 
   const generator = new DocumentationGenerator();

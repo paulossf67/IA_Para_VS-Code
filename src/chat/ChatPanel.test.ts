@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as vscode from 'vscode';
 
 // Mocks de VS Code API
@@ -12,6 +12,8 @@ const mockWebview = {
   asWebviewUri: vi.fn((uri) => uri),
   postMessage: vi.fn(),
   html: '',
+  onDidReceiveMessage: vi.fn(),
+  options: { enableScripts: true, localResourceRoots: [] },
 };
 
 const mockWebviewView = {
@@ -19,12 +21,77 @@ const mockWebviewView = {
   onDidDispose: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
+const mockExtensionUri = vscode.Uri.file('/fake/extension/path');
+
 describe('ChatViewProvider Integration', () => {
-  beforeEach(() => {
+  let ChatViewProvider: any;
+  let chatStreamMock: any;
+  let checkOllamaAvailableMock: any;
+  let getConfigMock: any;
+  let trimHistoryMock: any;
+  let SYSTEM_PROMPT: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+
+    // Restaura o comportamento de Memento.get: devolver o valor padrão.
+    // Sem isso, um mockReturnValue de teste anterior vaza para os seguintes.
+    mockMemento.get.mockImplementation((_key: string, defaultValue?: any) => defaultValue);
+
+    chatStreamMock = vi.fn().mockResolvedValue('Resposta da IA');
+    checkOllamaAvailableMock = vi.fn().mockResolvedValue(true);
+    getConfigMock = vi.fn().mockReturnValue({
+      url: 'http://localhost:11434',
+      model: 'qwen2.5-coder:7b',
+      maxTokens: 1024,
+      temperature: 0.2,
+      numCtx: 8192,
+      maxHistoryMessages: 20,
+      maxHistorySize: 10,
+    });
+    trimHistoryMock = vi.fn((msgs) => msgs);
+    SYSTEM_PROMPT = 'Test system prompt';
+
+    // importOriginal preserva as funções puras (stripCodeFences, isModelInstalled…)
+    // para que possam ser testadas de verdade; só o que faz I/O é mockado.
+    vi.doMock('../utils/ollama', async (importOriginal) => ({
+      ...(await importOriginal<Record<string, unknown>>()),
+      chatStream: chatStreamMock,
+      checkOllamaAvailable: checkOllamaAvailableMock,
+      getConfig: getConfigMock,
+      SYSTEM_PROMPT,
+    }));
+
+    vi.doMock('../utils/projectContext', () => ({
+      getProjectContext: vi.fn().mockResolvedValue(null),
+      clearContextCache: vi.fn(),
+    }));
+
+    vi.doMock('../utils/contextSelector', () => ({
+      getSelectedFilesConfig: vi.fn().mockReturnValue(null),
+    }));
+
+    vi.doMock('../utils/advancedContextManager', () => ({
+      AdvancedContextManager: vi.fn().mockImplementation(() => ({
+        getContextString: vi.fn().mockResolvedValue(''),
+      })),
+    }));
+
+    vi.doMock('../utils/retry', () => ({
+      retryWithBackoff: vi.fn((fn) => fn()),
+    }));
+
+    ({ ChatViewProvider } = await import('./ChatPanel'));
+  });
+
+  afterEach(() => {
+    // clearAllMocks preserva as implementações definidas no beforeEach;
+    // resetAllMocks as apagaria e os mocks passariam a devolver undefined.
     vi.clearAllMocks();
   });
 
-  it('carrega histórico do storage ao inicializar', async () => {
+  it('carrega histórico do storage ao inicializar', () => {
     const historico = [
       { role: 'user', content: 'Olá' },
       { role: 'assistant', content: 'Oi!' },
@@ -32,14 +99,8 @@ describe('ChatViewProvider Integration', () => {
 
     mockMemento.get.mockReturnValue(historico);
 
-    // Simula construtor
-    const messages: any[] = [
-      { role: 'system', content: 'System prompt' },
-      ...historico,
-    ];
-
-    expect(messages).toHaveLength(3);
-    expect(messages[1].content).toBe('Olá');
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    expect(provider).toBeDefined();
   });
 
   it('salva histórico ao descartar', () => {
@@ -48,7 +109,8 @@ describe('ChatViewProvider Integration', () => {
       { role: 'assistant', content: 'Response' },
     ];
 
-    mockMemento.update('chatHistory', historico);
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.dispose();
 
     expect(mockMemento.update).toHaveBeenCalledWith('chatHistory', historico);
   });
@@ -66,11 +128,11 @@ describe('ChatViewProvider Integration', () => {
   });
 
   it('limita histórico por tamanho em MB', () => {
-    const maxSizeBytes = 5 * 1024 * 1024; // 5 MB
+    const maxSizeBytes = 5 * 1024 * 1024;
     const messages = [
-      { role: 'user', content: 'x'.repeat(1000000) }, // ~1 MB
-      { role: 'assistant', content: 'y'.repeat(1000000) }, // ~1 MB
-      { role: 'user', content: 'z'.repeat(1000000) }, // ~1 MB
+      { role: 'user', content: 'x'.repeat(1000000) },
+      { role: 'assistant', content: 'y'.repeat(1000000) },
+      { role: 'user', content: 'z'.repeat(1000000) },
     ];
 
     let totalSize = 0;
@@ -142,7 +204,7 @@ describe('ChatViewProvider Integration', () => {
   });
 
   it('rejeita limpeza de histórico sem confirmação', () => {
-    const shouldClear = false; // Usuário cancelou
+    const shouldClear = false;
 
     if (shouldClear) {
       // Limpar
@@ -160,10 +222,94 @@ describe('ChatViewProvider Integration', () => {
       { role: 'assistant', content: 'Response 1' },
     ];
 
-    // Simula limpeza
     const cleared = [{ role: 'system', content: 'System' }];
 
     expect(cleared).toHaveLength(1);
     expect(cleared[0].role).toBe('system');
+  });
+
+  it('processQueue processa mensagens em fila sequencialmente', async () => {
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+    
+    mockWebview.onDidReceiveMessage.mockImplementation((handler) => {
+      handler({ type: 'ready' });
+    });
+
+    await new Promise(r => setTimeout(r, 10));
+
+    provider.enqueue('Primeira mensagem');
+    provider.enqueue('Segunda mensagem');
+
+    expect(chatStreamMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ollama utility functions', () => {
+  it('trimHistory mantém system prompt e últimas N mensagens', async () => {
+    const { trimHistory } = await import('../utils/ollama');
+    
+    const messages = [
+      { role: 'system', content: 'System' },
+      { role: 'user', content: 'Msg 1' },
+      { role: 'assistant', content: 'Resp 1' },
+      { role: 'user', content: 'Msg 2' },
+      { role: 'assistant', content: 'Resp 2' },
+      { role: 'user', content: 'Msg 3' },
+      { role: 'assistant', content: 'Resp 3' },
+    ];
+
+    const result = trimHistory(messages, 3);
+    
+    expect(result[0].role).toBe('system');
+    expect(result.length).toBe(4); // system + 3 últimas
+  });
+
+  it('trimHistory não começa com assistant', async () => {
+    const { trimHistory } = await import('../utils/ollama');
+    
+    const messages = [
+      { role: 'system', content: 'System' },
+      { role: 'assistant', content: 'Resp órfã' },
+      { role: 'user', content: 'Msg 1' },
+      { role: 'assistant', content: 'Resp 1' },
+    ];
+
+    const result = trimHistory(messages, 2);
+    
+    expect(result[0].role).toBe('system');
+    expect(result[1].role).toBe('user');
+  });
+
+  it('getConfig retorna defaults quando config não definida', async () => {
+    const { getConfig } = await import('../utils/ollama');
+    const config = getConfig();
+    
+    expect(config.url).toBe('http://localhost:11434');
+    expect(config.model).toBe('qwen2.5-coder:7b');
+    expect(config.maxTokens).toBe(1024);
+    expect(config.temperature).toBe(0.2);
+    expect(config.numCtx).toBe(8192);
+  });
+
+  it('isModelInstalled verifica modelo com e sem tag', async () => {
+    const { isModelInstalled } = await import('../utils/ollama');
+    
+    const installed = ['qwen2.5-coder:7b', 'llama3.1:8b'];
+    
+    expect(isModelInstalled('qwen2.5-coder:7b', installed)).toBe(true);
+    expect(isModelInstalled('qwen2.5-coder', installed)).toBe(true);
+    expect(isModelInstalled('qwen2.5-coder:latest', installed)).toBe(true);
+    expect(isModelInstalled('deepseek-coder:16b', installed)).toBe(false);
+  });
+
+  it('stripCodeFences remove cercas markdown', async () => {
+    const { stripCodeFences } = await import('../utils/ollama');
+    
+    expect(stripCodeFences('```js\ncode\n```')).toBe('code');
+    expect(stripCodeFences('```\ncode\n```')).toBe('code');
+    expect(stripCodeFences('code sem cercas')).toBe('code sem cercas');
+    expect(stripCodeFences('```python\nprint("hi")\n```')).toBe('print("hi")');
   });
 });

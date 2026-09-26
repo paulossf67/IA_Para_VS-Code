@@ -11,17 +11,32 @@ import {
 const PREFIX_LINES = 60;
 const SUFFIX_LINES = 20;
 
-function sleep(ms: number, token: vscode.CancellationToken): Promise<void> {
+/** Espera `ms`, ou resolve antes se o token for cancelado. Exportada para teste. */
+export function sleep(ms: number, token: vscode.CancellationToken): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      sub.dispose();
+    // `sub` declarado antes: um token já cancelado dispara o callback de forma
+    // síncrona, e referenciá-lo por const daria ReferenceError (temporal dead zone).
+    let sub: vscode.Disposable | undefined;
+    let done = false;
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      sub?.dispose();
       resolve();
-    }, ms);
-    const sub = token.onCancellationRequested(() => {
+    };
+
+    const timer = setTimeout(finish, ms);
+
+    sub = token.onCancellationRequested(() => {
       clearTimeout(timer);
-      sub.dispose();
-      resolve();
+      finish();
     });
+
+    if (token.isCancellationRequested) {
+      clearTimeout(timer);
+      finish();
+    }
   });
 }
 

@@ -18,13 +18,6 @@ export interface BugAnalysis {
 
 const COMMON_PATTERNS = [
   {
-    pattern: 'null_pointer_dereference',
-    regex: /\w+\.\w+(?!\s*\?)/g,
-    severity: 'critical' as const,
-    description: 'Possível null pointer dereference sem verificação',
-    suggestedFix: 'Verifique se o objeto é null antes de acessar propriedades',
-  },
-  {
     pattern: 'hardcoded_secrets',
     regex: /(password|secret|apikey|token)\s*=\s*["'][^"']*["']/gi,
     severity: 'critical' as const,
@@ -70,7 +63,7 @@ export class BugDetective {
 
     // Check common patterns
     for (const pattern of COMMON_PATTERNS) {
-      const matches = [...code.matchAll(new RegExp(pattern.regex))];
+      const matches = [...code.matchAll(new RegExp(pattern.regex.source, pattern.regex.flags))];
       if (matches.length > 0) {
         patterns.push({
           pattern: pattern.pattern,
@@ -197,7 +190,6 @@ Limite a 3 padrões.`;
     const patterns: string[] = [];
 
     // Quick pattern checks
-    if (code.match(/\w+\.\w+(?!\s*\?)/)) patterns.push('Potential null references');
     if (code.match(/(password|secret|apikey|token)\s*=\s*["'][^"']*["']/i))
       patterns.push('Hardcoded secrets');
     if (code.match(/await\s+\w+\(?[^)]*\)(?!\s*(\.catch|\s*catch))/))

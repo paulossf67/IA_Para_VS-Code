@@ -1,19 +1,74 @@
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
 import { chat } from './ollama';
 
 export interface CommitAnalysis {
-  quality: number; // 0-100
+  quality: number;
   issues: string[];
   suggestions: string[];
   message: string;
 }
 
+interface GitAPI {
+  repositories: Repository[];
+}
+
+interface Repository {
+  rootUri: vscode.Uri;
+  diffIndexWithHEAD(options?: { cached?: boolean }): Promise<string>;
+  getDiff(uncommitted?: boolean): Promise<string>;
+}
+
+let gitAPI: GitAPI | null = null;
+
+async function getGitAPI(): Promise<GitAPI | null> {
+  if (gitAPI) return gitAPI;
+
+  const gitExt = vscode.extensions.getExtension('vscode.git');
+  if (!gitExt) {
+    vscode.window.showWarningMessage('Local AI: Extensão Git do VS Code não encontrada');
+    return null;
+  }
+
+  if (!gitExt.isActive) {
+    await gitExt.activate();
+  }
+
+  const api = gitExt.exports.getAPI(1);
+  if (!api || !api.repositories?.length) {
+    vscode.window.showWarningMessage('Local AI: Nenhum repositório Git aberto');
+    return null;
+  }
+
+  gitAPI = api;
+  return api;
+}
+
+async function getRepository(): Promise<Repository | null> {
+  const api = await getGitAPI();
+  if (!api || !api.repositories.length) return null;
+  return api.repositories[0];
+}
+
+async function getGitDiff(cached = true): Promise<string | null> {
+  try {
+    const repo = await getRepository();
+    if (!repo) return null;
+
+    if (typeof repo.diffIndexWithHEAD === 'function') {
+      return await repo.diffIndexWithHEAD({ cached });
+    }
+
+    return await repo.getDiff(!cached);
+  } catch {
+    return null;
+  }
+}
+
 export async function analyzeGitDiff(): Promise<CommitAnalysis | null> {
   try {
-    const diff = await getGitDiff();
+    const diff = await getGitDiff(true);
     if (!diff) {
-      vscode.window.showWarningMessage('Local AI: Nenhuma mudança para analisar');
+      vscode.window.showWarningMessage('Local AI: Nenhuma mudança staged para analisar');
       return null;
     }
 
@@ -27,22 +82,10 @@ export async function analyzeGitDiff(): Promise<CommitAnalysis | null> {
   }
 }
 
-async function getGitDiff(): Promise<string | null> {
-  return new Promise((resolve) => {
-    cp.exec('git diff --cached', (error, stdout) => {
-      if (error || !stdout.trim()) {
-        resolve(null);
-      } else {
-        resolve(stdout);
-      }
-    });
-  });
-}
-
 async function analyzeChanges(diff: string): Promise<CommitAnalysis> {
   const prompt = `Analise este git diff brevemente:
 
-${diff.slice(0, 2000)}
+${diff.slice(0, 3000)}
 
 Retorne JSON: {"quality": 1-100, "issues": [...], "suggestions": [...], "message": "..."}`;
 
@@ -106,14 +149,14 @@ export async function validateBeforePush(): Promise<boolean> {
 }
 
 export async function generateCommitMessage(): Promise<string | null> {
-  const diff = await getGitDiff();
+  const diff = await getGitDiff(true);
   if (!diff) {
-    vscode.window.showWarningMessage('Nenhuma mudança para gerar mensagem');
+    vscode.window.showWarningMessage('Nenhuma mudança staged para gerar mensagem');
     return null;
   }
 
   const prompt = `Gere uma mensagem de commit clara e concisa (max 100 chars) baseado neste diff:
-${diff.slice(0, 1500)}
+${diff.slice(0, 2000)}
 
 Retorne APENAS a mensagem, sem explicações.`;
 
