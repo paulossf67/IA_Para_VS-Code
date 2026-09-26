@@ -24,12 +24,6 @@
 | 🤖 **Multi-Provider** | Ollama (local), Claude, GPT, Gemini - API keys stored securely in SecretStorage |
 | 📝 **Snippet Manager** | Save & insert code snippets with tags |
 
-## 📸 Screenshots
-
-| Chat | Dashboard | Context Groups |
-|------|-----------|----------------|
-| ![Chat](images/chat.png) | ![Dashboard](images/dashboard.png) | ![Context](images/context.png) |
-
 ## 🚀 Quick Start
 
 ### Prerequisites
