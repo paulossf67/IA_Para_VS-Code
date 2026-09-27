@@ -1,0 +1,14 @@
+# Normaliza fim de linha no repositório e evita os avisos de LF/CRLF
+* text=auto eol=lf
+
+# Scripts do Windows PRECISAM de CRLF: com LF o cmd.exe corta o primeiro
+# caractere de cada linha e o script falha de formas confusas.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binários — nunca converter
+*.vsix binary
+*.png binary
+*.jpg binary
+*.ico binary
