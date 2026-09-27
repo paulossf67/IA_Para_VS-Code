@@ -10,7 +10,11 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Assistant ativado!');
 
   // ✅ FEATURE 1: Chat Provider
-  const chatProvider = new ChatViewProvider(context.extensionUri, context.globalState);
+  const chatProvider = new ChatViewProvider(
+    context.extensionUri,
+    context.globalState,
+    context.secrets
+  );
   (globalThis as any).__localAIChatProvider = chatProvider;
   context.subscriptions.push(
     chatProvider,

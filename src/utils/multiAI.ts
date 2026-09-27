@@ -116,6 +116,64 @@ async function chatOllama(
   return response;
 }
 
+/**
+ * Mesma interface de `chatStream`, mas respeitando o provedor configurado.
+ * Ollama transmite token a token; os provedores de nuvem respondem de uma vez
+ * e o texto é entregue ao callback em um único bloco.
+ */
+export async function chatStreamWithAI(
+  storage: vscode.Memento,
+  secrets: vscode.SecretStorage,
+  messages: { role: string; content: string }[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+  options?: { maxTokens?: number; temperature?: number }
+): Promise<string> {
+  const config = getAIConfig(storage);
+
+  // Sem configuração explícita, o padrão continua sendo o Ollama local
+  if (!config || config.provider === 'ollama') {
+    const { chatStream } = await import('./ollama');
+    return chatStream(messages as any, onChunk, signal);
+  }
+
+  const apiKey = await secrets.get(API_KEY_SECRET);
+  if (!apiKey) {
+    throw new Error(
+      `Chave de API do provedor "${config.provider}" não encontrada. ` +
+        'Rode "Local AI: Configurar Provedor IA" novamente.'
+    );
+  }
+
+  const text = await chatWithAI(storage, secrets, messages, options);
+  if (signal?.aborted) return '';
+
+  onChunk(text);
+  return text;
+}
+
+/** Transforma erro HTTP em mensagem que diz o que fazer. */
+async function ensureOk(response: Response, provider: string): Promise<void> {
+  if (response.ok) return;
+
+  let detail = '';
+  try {
+    const body = (await response.json()) as any;
+    detail = body?.error?.message || body?.error?.type || '';
+  } catch {
+    // corpo não-JSON: a mensagem de status já basta
+  }
+
+  const hint =
+    response.status === 401 || response.status === 403
+      ? ' Verifique a chave de API em "Local AI: Configurar Provedor IA".'
+      : response.status === 429
+        ? ' Limite de requisições atingido — aguarde e tente de novo.'
+        : '';
+
+  throw new Error(`${provider} respondeu ${response.status}. ${detail}${hint}`.trim());
+}
+
 async function chatClaude(
   apiKey: string,
   model: string,
@@ -137,8 +195,9 @@ async function chatClaude(
     }),
   });
 
+  await ensureOk(response, 'Claude');
   const data = (await response.json()) as any;
-  return data.content?.[0]?.text || 'Erro ao chamar Claude';
+  return data.content?.[0]?.text ?? '';
 }
 
 async function chatGPT(
@@ -161,8 +220,9 @@ async function chatGPT(
     }),
   });
 
+  await ensureOk(response, 'ChatGPT');
   const data = (await response.json()) as any;
-  return data.choices?.[0]?.message?.content || 'Erro ao chamar GPT';
+  return data.choices?.[0]?.message?.content ?? '';
 }
 
 async function chatGemini(
@@ -189,8 +249,9 @@ async function chatGemini(
     }
   );
 
+  await ensureOk(response, 'Gemini');
   const data = (await response.json()) as any;
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Erro ao chamar Gemini';
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
 export function getAIConfig(storage: vscode.Memento): AIConfig | null {

@@ -10,6 +10,7 @@ import {
 } from '../utils/ollama';
 import { getProjectContext, clearContextCache } from '../utils/projectContext';
 import { getSelectedFilesConfig } from '../utils/contextSelector';
+import { chatStreamWithAI, getAIConfig } from '../utils/multiAI';
 import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';
 
@@ -38,7 +39,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   private contextManager: AdvancedContextManager;
 
-  constructor(private readonly _extensionUri: vscode.Uri, private storage: vscode.Memento) {
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private storage: vscode.Memento,
+    private secrets?: vscode.SecretStorage
+  ) {
     this.lastEditor = vscode.window.activeTextEditor;
     this.contextManager = new AdvancedContextManager(storage);
     this.loadHistoryFromStorage();
@@ -48,7 +53,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       }),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('local-ai.model')) {
-          this.post({ type: 'model', name: getConfig().model });
+          this.post({ type: 'model', name: this.currentModelLabel() });
         }
         // numCtx define o orçamento do contexto; mudou, o cache não vale mais
         if (e.affectsConfiguration('local-ai.numCtx')) clearContextCache();
@@ -62,6 +67,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.abortController?.abort();
     this.saveHistoryToStorage();
     this.disposables.forEach((d) => d.dispose());
+  }
+
+  /** Reflete no chat a troca de provedor feita pelo comando de configuração. */
+  public refreshModelLabel(): void {
+    this.post({ type: 'model', name: this.currentModelLabel() });
+  }
+
+  /** Rótulo do modelo em uso — mostrar o do Ollama usando Claude confundiria. */
+  private currentModelLabel(): string {
+    const aiConfig = getAIConfig(this.storage);
+    if (aiConfig && aiConfig.provider !== 'ollama') {
+      return `${aiConfig.provider}: ${aiConfig.model}`;
+    }
+    return getConfig().model;
+  }
+
+  /**
+   * Envia a conversa ao provedor configurado. Sem SecretStorage (caminho usado
+   * pelos testes) cai direto no Ollama, que é também o padrão da extensão.
+   */
+  private runChat(onChunk: (text: string) => void, signal: AbortSignal): Promise<string> {
+    if (!this.secrets) {
+      return chatStream(this.messages, onChunk, signal);
+    }
+    return chatStreamWithAI(this.storage, this.secrets, this.messages, onChunk, signal);
   }
 
   private saveHistoryToStorage() {
@@ -172,7 +202,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const history = this.messages
       .filter((m) => m.role !== 'system')
       .map((m) => ({ role: m.role, content: m.content }));
-    this._view?.webview.postMessage({ type: 'restore', history, model: getConfig().model });
+    this._view?.webview.postMessage({ type: 'restore', history, model: this.currentModelLabel() });
 
     // O histórico acima já contém as perguntas; da fila só sobram os erros
     const pendingErrors = this.outbox.filter((m) => m.type === 'error');
@@ -273,8 +303,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
       await retryWithBackoff(
         () =>
-          chatStream(
-            this.messages,
+          this.runChat(
             (chunk) => {
               fullResponse += chunk;
               this.streamingText = fullResponse;

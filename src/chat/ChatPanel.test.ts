@@ -109,6 +109,10 @@ describe('ChatViewProvider Integration', () => {
       { role: 'assistant', content: 'Response' },
     ];
 
+    // Sem isso o provider nasce vazio e salvaria [] — o teste precisa que o
+    // historico exista no storage para verificar o ciclo carregar/salvar.
+    mockMemento.get.mockReturnValue(historico);
+
     const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
     provider.dispose();
 
@@ -230,19 +234,16 @@ describe('ChatViewProvider Integration', () => {
 
   it('processQueue processa mensagens em fila sequencialmente', async () => {
     const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
-    
     provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
-    
-    mockWebview.onDidReceiveMessage.mockImplementation((handler) => {
-      handler({ type: 'ready' });
-    });
 
-    await new Promise(r => setTimeout(r, 10));
+    // sendPrompt e a API publica que enfileira. A segunda chamada cai na fila
+    // porque a primeira ainda esta gerando; ambas rodam em sequencia.
+    await provider.sendPrompt('Primeira mensagem');
+    await provider.sendPrompt('Segunda mensagem');
 
-    provider.enqueue('Primeira mensagem');
-    provider.enqueue('Segunda mensagem');
-
-    expect(chatStreamMock).toHaveBeenCalledTimes(2);
+    // O processamento e disparado sem await (void processQueue), entao o teste
+    // espera a fila drenar em vez de verificar no mesmo tick.
+    await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -261,9 +262,12 @@ describe('ollama utility functions', () => {
     ];
 
     const result = trimHistory(messages, 3);
-    
+
     expect(result[0].role).toBe('system');
-    expect(result.length).toBe(4); // system + 3 últimas
+    // As 3 últimas seriam [Resp 2, Msg 3, Resp 3], mas a conversa não pode
+    // começar por uma resposta órfã do assistente: 'Resp 2' cai fora.
+    expect(result.length).toBe(3);
+    expect(result[1].content).toBe('Msg 3');
   });
 
   it('trimHistory não começa com assistant', async () => {
@@ -296,11 +300,18 @@ describe('ollama utility functions', () => {
   it('isModelInstalled verifica modelo com e sem tag', async () => {
     const { isModelInstalled } = await import('../utils/ollama');
     
-    const installed = ['qwen2.5-coder:7b', 'llama3.1:8b'];
-    
+    const installed = ['qwen2.5-coder:7b', 'llama3.1:8b', 'mistral:latest'];
+
     expect(isModelInstalled('qwen2.5-coder:7b', installed)).toBe(true);
-    expect(isModelInstalled('qwen2.5-coder', installed)).toBe(true);
-    expect(isModelInstalled('qwen2.5-coder:latest', installed)).toBe(true);
+
+    // Nome sem tag equivale a ':latest' — e ':latest' é uma tag distinta de
+    // ':7b'. Ter o 7b instalado não significa ter o latest.
+    expect(isModelInstalled('qwen2.5-coder', installed)).toBe(false);
+    expect(isModelInstalled('qwen2.5-coder:latest', installed)).toBe(false);
+
+    // Já 'mistral' resolve para 'mistral:latest', que está instalado
+    expect(isModelInstalled('mistral', installed)).toBe(true);
+
     expect(isModelInstalled('deepseek-coder:16b', installed)).toBe(false);
   });
 

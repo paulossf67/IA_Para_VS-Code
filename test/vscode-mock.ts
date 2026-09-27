@@ -1,9 +1,21 @@
 // O módulo 'vscode' só existe dentro do editor. Fora dele (vitest) qualquer
 // import de código que toque a API precisa deste stub, senão o arquivo de teste
 // inteiro falha ao carregar.
+/**
+ * Valores de configuração que um teste queira forçar.
+ * Ex.: `__configOverrides.enableInlineCompletion = false`.
+ * Limpe entre testes com `__resetConfigOverrides()`.
+ */
+export const __configOverrides: Record<string, unknown> = {};
+
+export function __resetConfigOverrides(): void {
+  for (const key of Object.keys(__configOverrides)) delete __configOverrides[key];
+}
+
 export const workspace = {
   getConfiguration: () => ({
-    get: <T>(_key: string, defaultValue?: T) => defaultValue,
+    get: <T>(key: string, defaultValue?: T) =>
+      key in __configOverrides ? (__configOverrides[key] as T) : defaultValue,
     update: async () => undefined,
   }),
   workspaceFolders: undefined as unknown[] | undefined,

@@ -88,6 +88,18 @@
         "title": "Local AI: Limpar Seleção de Arquivos"
       },
       {
+        "command": "local-ai.detectBugs",
+        "title": "Local AI: Detectar Bugs no Arquivo"
+      },
+      {
+        "command": "local-ai.profilePerformance",
+        "title": "Local AI: Analisar Performance do Arquivo"
+      },
+      {
+        "command": "local-ai.generateProjectDocs",
+        "title": "Local AI: Gerar Documentação do Projeto"
+      },
+      {
         "command": "local-ai.configureAI",
         "title": "Local AI: Configurar Provedor IA"
       },

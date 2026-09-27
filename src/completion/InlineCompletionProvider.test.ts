@@ -10,7 +10,9 @@ describe('LocalAIInlineCompletionProvider', () => {
   let FimNotSupportedError: any;
   let SYSTEM_PROMPT: string;
 
-  const mockDocument = {
+  // Recriado a cada teste: clearAllMocks nao esvazia a fila de
+  // mockReturnValueOnce, e valores nao consumidos vazariam para o teste seguinte.
+  const makeMockDocument = () => ({
     languageId: 'typescript',
     lineCount: 50,
     getText: vi.fn(() => 'function soma(x: number, y: number) {\n'),
@@ -27,7 +29,9 @@ describe('LocalAIInlineCompletionProvider', () => {
         isEmptyOrWhitespace: false,
       };
     }),
-  };
+  });
+
+  let mockDocument: ReturnType<typeof makeMockDocument>;
 
   const mockPosition = new vscode.Position(10, 5);
 
@@ -44,6 +48,7 @@ describe('LocalAIInlineCompletionProvider', () => {
     vi.clearAllMocks();
     vi.resetModules();
 
+    mockDocument = makeMockDocument();
     generateFimMock = vi.fn().mockResolvedValue('    return x + y;\n');
     chatMock = vi.fn().mockResolvedValue('    return x + y;\n');
     getConfigMock = vi.fn().mockReturnValue({
@@ -81,13 +86,15 @@ describe('LocalAIInlineCompletionProvider', () => {
     // clearAllMocks (e não resetAllMocks) preserva as implementações de
     // mockDocument.lineAt/getText, que são definidas uma única vez acima.
     vi.clearAllMocks();
+    void import('vscode').then((m: any) => m.__resetConfigOverrides());
   });
 
   it('retorna undefined quando autocomplete desabilitado', async () => {
-    getConfigMock.mockReturnValueOnce({
-      ...getConfigMock(),
-      enableInlineCompletion: false,
-    });
+    // O provider le de vscode.workspace.getConfiguration, nao de getConfig().
+    // resetModules() no beforeEach recria o mock, entao pegamos a instancia
+    // viva do cache — a mesma que o provider importou.
+    const vscodeLive: any = await import('vscode');
+    vscodeLive.__configOverrides.enableInlineCompletion = false;
 
     const provider = new InlineCompletionProvider();
     const result = await provider.provideInlineCompletionItems(
@@ -130,7 +137,11 @@ describe('LocalAIInlineCompletionProvider', () => {
     expect(generateFimMock).toHaveBeenCalled();
     expect(chatMock).not.toHaveBeenCalled();
     expect(result).toBeDefined();
-    expect(result?.[0]).toBeInstanceOf(vscode.InlineCompletionItem);
+
+    // Comparar com a classe da instancia viva do mock: resetModules() cria uma
+    // copia nova do modulo, e a classe do import estatico no topo ja e outra.
+    const vscodeLive: any = await import('vscode');
+    expect(result?.[0]).toBeInstanceOf(vscodeLive.InlineCompletionItem);
   });
 
   it('usa chat como fallback quando FIM não suportado', async () => {
@@ -206,7 +217,9 @@ describe('LocalAIInlineCompletionProvider', () => {
     chatMock.mockResolvedValueOnce('  const result = x + y;\n  return result;\n');
     
     mockDocument.getText
-      .mockReturnValueOnce('  const result = x + y;\n') // prefix ends with current line
+      // Sem \n final: o cursor esta no fim da linha digitada, que e o caso em
+      // que o modelo de chat costuma repetir o que ja esta escrito.
+      .mockReturnValueOnce('function soma(x, y) {\n  const result = x + y;')
       .mockReturnValueOnce('\n}');
 
     const provider = new InlineCompletionProvider();

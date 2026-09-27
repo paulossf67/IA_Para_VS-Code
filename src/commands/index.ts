@@ -19,6 +19,9 @@ import { AdvancedContextManager, showContextGroupsUI } from '../utils/advancedCo
 import { SnippetManager, showSnippetsUI } from '../utils/snippetManager';
 import { SemanticSearcher } from '../utils/semanticSearch';
 import { CodeGenetics } from '../utils/codeGenetics';
+import { BugDetective, showBugDetectiveUI } from '../utils/bugDetective';
+import { showPerformanceProfilerUI } from '../utils/performanceProfiler';
+import { showDocGeneratorUI } from '../utils/docGenerator';
 
 function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -410,7 +413,30 @@ ${prefix}
   // ⚙️ CONFIGURATION: Configurar provedor IA
   context.subscriptions.push(
     vscode.commands.registerCommand('local-ai.configureAI', async () => {
-      await configureAIProvider(context.globalState, context.secrets);
+      const config = await configureAIProvider(context.globalState, context.secrets);
+      if (config) chatProvider.refreshModelLabel();
+    })
+  );
+
+  // 🐛 Analisa o arquivo aberto em busca de padrões de bug conhecidos
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.detectBugs', async () => {
+      await showBugDetectiveUI(new BugDetective());
+    })
+  );
+
+  // ⚡ Aponta gargalos: loops aninhados, eval(), padrões O(n²)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.profilePerformance', async () => {
+      await showPerformanceProfilerUI();
+    })
+  );
+
+  // 📚 Gera README/CONTRIBUTING/ARCHITECTURE/API do projeto (pede confirmação
+  // antes de sobrescrever arquivos existentes)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.generateProjectDocs', async () => {
+      await showDocGeneratorUI();
     })
   );
 
