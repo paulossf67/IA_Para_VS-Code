@@ -88,6 +88,18 @@
         "title": "Local AI: Limpar Seleção de Arquivos"
       },
       {
+        "command": "local-ai.reviewPR",
+        "title": "Local AI: Revisar Pull Request no GitHub"
+      },
+      {
+        "command": "local-ai.setGitHubToken",
+        "title": "Local AI: Configurar Token do GitHub"
+      },
+      {
+        "command": "local-ai.clearGitHubToken",
+        "title": "Local AI: Remover Token do GitHub"
+      },
+      {
         "command": "local-ai.detectBugs",
         "title": "Local AI: Detectar Bugs no Arquivo"
       },
@@ -323,7 +335,8 @@
         "local-ai.githubToken": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Personal Access Token do GitHub, usado pelo review de Pull Requests. Fica salvo nas configurações do VS Code."
+          "markdownDeprecationMessage": "**Descontinuado.** O token agora fica no armazenamento seguro do VS Code, não em settings.json (que é texto plano e sincroniza entre máquinas). Um valor presente aqui é migrado e apagado automaticamente. Use o comando **Local AI: Configurar Token do GitHub**.",
+          "markdownDescription": "Descontinuado — use o comando \"Local AI: Configurar Token do GitHub\"."
         },
         "local-ai.enableSemanticSearch": {
           "type": "boolean",

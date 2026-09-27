@@ -22,6 +22,7 @@ import { CodeGenetics } from '../utils/codeGenetics';
 import { BugDetective, showBugDetectiveUI } from '../utils/bugDetective';
 import { showPerformanceProfilerUI } from '../utils/performanceProfiler';
 import { showDocGeneratorUI } from '../utils/docGenerator';
+import { showGitHubPRReviewUI, promptForToken, clearToken } from '../utils/githubPRReview';
 
 function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -437,6 +438,25 @@ ${prefix}
   context.subscriptions.push(
     vscode.commands.registerCommand('local-ai.generateProjectDocs', async () => {
       await showDocGeneratorUI();
+    })
+  );
+
+  // 🔗 Revisa o PR do branch atual e publica o resultado como comentário
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.reviewPR', async () => {
+      await showGitHubPRReviewUI(context.secrets);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.setGitHubToken', async () => {
+      await promptForToken(context.secrets);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.clearGitHubToken', async () => {
+      await clearToken(context.secrets);
     })
   );
 
