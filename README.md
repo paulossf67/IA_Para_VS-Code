@@ -49,10 +49,17 @@
 code --install-extension local-ai-vscode-0.4.0.vsix
 ```
 
-**Windows — guided installer**: run `instalar-extensao.bat`. It locates the
-`.vsix`, finds VS Code even when `code` isn't on PATH, installs the extension,
-then checks whether Ollama is running and offers to pull a model if none is
-installed.
+**Guided installer** — locates the `.vsix`, finds VS Code even when `code`
+isn't on PATH, installs the extension, then checks whether Ollama is running
+and offers to pull a model if none is installed:
+
+```bash
+# Windows
+instalar-extensao.bat
+
+# macOS / Linux
+./instalar-extensao.sh
+```
 
 ## ⌨️ Keybindings
 
