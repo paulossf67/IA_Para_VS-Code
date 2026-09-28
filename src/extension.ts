@@ -5,6 +5,7 @@ import { registerCommands } from './commands';
 import { checkOllamaAvailable, getConfig, isModelInstalled, listModels } from './utils/ollama';
 import { analyzeCodeOnSave } from './utils/autoReview';
 import { DashboardProvider } from './utils/dashboardProvider';
+import { requiresOllama } from './utils/multiAI';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Assistant ativado!');
@@ -57,10 +58,27 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // Verificar setup do Ollama
-  setTimeout(() => void checkSetup(), 2000);
+  const updateDashboardVisibility = () =>
+    vscode.commands.executeCommand(
+      'setContext',
+      'local-ai.dashboardEnabled',
+      vscode.workspace.getConfiguration('local-ai').get<boolean>('enableDashboard', true)
+    );
+  void updateDashboardVisibility();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('local-ai.enableDashboard')) {
+        void updateDashboardVisibility();
+      }
+    })
+  );
+
+  setTimeout(() => void checkSetup(context), 2000);
 }
 
-async function checkSetup() {
+async function checkSetup(context: vscode.ExtensionContext) {
+  if (!requiresOllama(context.globalState)) return;
+
   const available = await checkOllamaAvailable();
   if (!available) {
     const action = await vscode.window.showWarningMessage(

@@ -9,6 +9,7 @@ export interface SearchableItem {
   title: string;
   content: string;
   embedding?: number[];
+  embeddingModel?: string;
   metadata?: {
     filePath?: string;
     lineStart?: number;
@@ -25,7 +26,6 @@ export interface SearchResult {
 }
 
 const EMBEDDING_MODEL = 'nomic-embed-text';
-const EMBEDDING_DIM = 768;
 const SIMILARITY_THRESHOLD = 0.3;
 const MAX_RESULTS = 10;
 const CHUNK_SIZE = 500;
@@ -36,6 +36,14 @@ export class SemanticSearcher {
   private cache: Map<string, number[]> = new Map();
   private isIndexing = false;
   private abortController?: AbortController;
+
+  private getSearchConfig() {
+    const config = vscode.workspace.getConfiguration('local-ai');
+    return {
+      embeddingModel: config.get<string>('embeddingModel', EMBEDDING_MODEL) || EMBEDDING_MODEL,
+      similarityThreshold: config.get<number>('similarityThreshold', SIMILARITY_THRESHOLD) ?? SIMILARITY_THRESHOLD,
+    };
+  }
 
   constructor(private storage: vscode.Memento, private context: vscode.ExtensionContext) {}
 
@@ -131,16 +139,18 @@ export class SemanticSearcher {
 
     try {
       const texts = items.map(item => item.content);
+      const { embeddingModel } = this.getSearchConfig();
       const embeddings = await generateEmbeddingsBatch(texts, {
-        model: EMBEDDING_MODEL,
+        model: embeddingModel,
         signal: this.abortController.signal,
       });
 
       let indexed = 0;
       for (let i = 0; i < items.length; i++) {
         if (this.abortController.signal.aborted) break;
-        if (embeddings[i] && embeddings[i].length === EMBEDDING_DIM) {
+        if (embeddings[i]?.length) {
           items[i].embedding = embeddings[i];
+          items[i].embeddingModel = embeddingModel;
           this.index.push(items[i]);
           indexed++;
         }
@@ -182,16 +192,21 @@ export class SemanticSearcher {
   async search(query: string, topK = MAX_RESULTS): Promise<SearchResult[]> {
     if (this.index.length === 0) return [];
 
-    const queryEmbedding = await this.getEmbedding(query);
+    const { embeddingModel, similarityThreshold } = this.getSearchConfig();
+    const queryEmbedding = await this.getEmbedding(query, embeddingModel);
     if (!queryEmbedding.length) return [];
 
     const results: SearchResult[] = [];
 
     for (const item of this.index) {
-      if (!item.embedding || item.embedding.length !== EMBEDDING_DIM) continue;
+      if (
+        !item.embedding ||
+        (item.embeddingModel ?? EMBEDDING_MODEL) !== embeddingModel ||
+        item.embedding.length !== queryEmbedding.length
+      ) continue;
 
       const score = this.cosineSimilarity(queryEmbedding, item.embedding);
-      if (score >= SIMILARITY_THRESHOLD) {
+      if (score >= similarityThreshold) {
         const highlights = this.extractHighlights(item.content, query);
         results.push({ item, score, highlights });
       }
@@ -202,13 +217,14 @@ export class SemanticSearcher {
       .slice(0, topK);
   }
 
-  private async getEmbedding(text: string): Promise<number[]> {
-    const cached = this.cache.get(text);
+  private async getEmbedding(text: string, model: string): Promise<number[]> {
+    const cacheKey = `${model}:${text}`;
+    const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
     try {
-      const embedding = await generateEmbedding(text, { model: EMBEDDING_MODEL });
-      this.cache.set(text, embedding);
+      const embedding = await generateEmbedding(text, { model });
+      this.cache.set(cacheKey, embedding);
       return embedding;
     } catch {
       return [];

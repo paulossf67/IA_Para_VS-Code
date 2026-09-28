@@ -5,7 +5,7 @@
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/paulosergio.local-ai-vscode)](https://marketplace.visualstudio.com/items?itemName=paulosergio.local-ai-vscode)
 [![License](https://img.shields.io/github/license/paulosergio/local-ai-vscode)](LICENSE)
 
-**100% Local AI Assistant** powered by [Ollama](https://ollama.com). Your code never leaves your machine.
+AI assistant for VS Code. Use [Ollama](https://ollama.com) locally or configure Claude, GPT, or Gemini through their APIs. Cloud providers receive the prompt and included project context.
 
 ## ✨ Features
 
@@ -27,6 +27,8 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
+
+For local chat, autocomplete, auto-review, and embeddings:
 
 1. **Install Ollama**: https://ollama.com
 2. **Start Ollama**: `ollama serve`
@@ -61,6 +63,8 @@ instalar-extensao.bat
 ./instalar-extensao.sh
 ```
 
+The root scripts `install.bat`, `start-windows.bat`, and `optimiced.bat` belong to a separate legacy USB launcher, not this VS Code extension. That launcher requires `install-core.ps1`, an `ollama/` folder, and an `anythingllm/` folder, which are not included here. Use `instalar-extensao.bat` to install the VS Code extension.
+
 ## ⌨️ Keybindings
 
 | Shortcut | Action |
@@ -82,6 +86,7 @@ Settings (`Ctrl+,` → search "Local AI"):
 | `local-ai.temperature` | `0.2` | 0.1-0.3 recommended for code |
 | `local-ai.maxTokens` | `1024` | Max response tokens |
 | `local-ai.enableAutoReview` | `true` | Analyze code on save |
+| `local-ai.enableDashboard` | `true` | Show the project dashboard view |
 | `local-ai.enableSemanticSearch` | `true` | Enable semantic search |
 | `local-ai.embeddingModel` | `nomic-embed-text` | Embedding model for search |
 | `local-ai.similarityThreshold` | `0.3` | Search relevance threshold |
@@ -111,6 +116,8 @@ Organize context by feature/module:
 2. Choose: Ollama / Claude / ChatGPT / Gemini
 3. Enter API key (stored in **VS Code SecretStorage**, not settings.json)
 4. Select model
+
+The chat uses the selected cloud provider without requiring Ollama. Ollama is still needed for local autocomplete, auto-review, and embedding-based search.
 
 ## 📦 Development
 
@@ -153,7 +160,6 @@ src/
     ├── performanceProfiler.ts      # Performance pattern detection
     ├── dashboardProvider.ts        # Unified quality dashboard
     ├── multiAI.ts                  # Multi-provider with SecretStorage
-    ├── modelManager.ts             # Models per use-case
     └── snippetManager.ts           # Persistent snippets
 ```
 
@@ -170,4 +176,4 @@ MIT - see [LICENSE](LICENSE)
 
 ---
 
-**Privacy First**: Your code stays on your machine. No telemetry, no cloud required (with Ollama).
+**Privacy**: No telemetry. With Ollama, prompts and project context stay on your machine; cloud providers send them to their APIs.

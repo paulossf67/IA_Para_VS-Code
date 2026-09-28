@@ -8,19 +8,19 @@ echo  ===================================================
 echo       LOCAL AI ASSISTANT - INSTALADOR
 echo  ===================================================
 echo.
-echo   Extensao de IA 100%% local para VS Code.
-echo   Seu codigo nunca sai da maquina.
+echo   Extensao de IA para VS Code com Ollama local.
+echo   No modo Ollama, seu codigo fica na maquina.
 echo.
 echo  ---------------------------------------------------
 echo.
 
 cd /d "%~dp0"
 
-REM ---------- 1. Localizar o pacote .vsix ----------
+REM ---------- 1. Localizar a maior versao do pacote .vsix ----------
 echo  [1/4] Procurando o pacote da extensao...
 
 set "VSIX="
-for /f "delims=" %%F in ('dir /b /o-d "local-ai-vscode-*.vsix" 2^>nul') do (
+for /f "delims=" %%F in ('powershell -NoProfile -Command "$best=$null; $bestVersion=[version]'0.0'; foreach($file in (Get-ChildItem -File -Filter 'local-ai-vscode-*.vsix')) { try { $version=[version]$file.BaseName.Substring(16); if ($version -gt $bestVersion) { $bestVersion=$version; $best=$file } } catch {} }; if ($best) { $best.Name }" 2^>nul') do (
     if not defined VSIX set "VSIX=%%F"
 )
 

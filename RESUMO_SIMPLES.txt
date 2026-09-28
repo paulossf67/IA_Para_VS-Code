@@ -3,6 +3,9 @@
                       RESUMO FINAL
 ================================================================================
 
+DOCUMENTO HISTORICO: a lista de recursos abaixo nao representa o estado atual.
+Consulte README.md e package.json para instrucoes e estado atuais.
+
 ✅ O QUE FOI ENTREGUE HOJE
 ================================================================================
 

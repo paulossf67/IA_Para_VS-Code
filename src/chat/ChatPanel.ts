@@ -10,7 +10,7 @@ import {
 } from '../utils/ollama';
 import { getProjectContext, clearContextCache } from '../utils/projectContext';
 import { getSelectedFilesConfig } from '../utils/contextStorage';
-import { chatStreamWithAI, getAIConfig } from '../utils/multiAI';
+import { chatStreamWithAI, getAIConfig, requiresOllama } from '../utils/multiAI';
 import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';
 
@@ -246,8 +246,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   private async handleUserMessage(text: string) {
-    const available = await checkOllamaAvailable();
-    if (!available) {
+    if (requiresOllama(this.storage) && !(await checkOllamaAvailable())) {
       this.promptQueue = [];
       this.post({
         type: 'error',

@@ -84,8 +84,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Upcoming (0.5.0)
 
-- [ ] CI/CD GitHub Actions (build, test, auto-publish on tag)
-- [ ] Code Genetics (git history + LLM semantic evolution)
 - [ ] Improved semantic search UI (filters, facets)
-- [ ] Team collaboration features (shared context, annotations)
 - [ ] More language support for bug/perf patterns

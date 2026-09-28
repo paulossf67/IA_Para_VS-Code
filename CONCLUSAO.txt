@@ -2,6 +2,9 @@
                     MELHORIAS IMPLEMENTADAS - CONCLUSÃO
 ================================================================================
 
+DOCUMENTO HISTORICO: este resumo descreve uma etapa antiga (versao 0.2.0).
+Consulte README.md e package.json para instrucoes e estado atuais.
+
 DATA: 2026-09-24
 PROJETO: Local AI Assistant para VS Code
 VERSÃO: 0.2.0 + Improvements

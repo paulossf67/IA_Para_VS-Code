@@ -1,6 +1,9 @@
 ================================================================================
-               LOCAL AI ASSISTANT - VERSÃO PROFISSIONAL 0.3.0
+               DOCUMENTO HISTÓRICO - VERSÃO 0.3.0
 ================================================================================
+
+Este resumo descreve uma versão antiga e não é a documentação atual do projeto.
+Consulte README.md e package.json para recursos, versão e comandos vigentes.
 
 DATA: 2026-09-24
 STATUS: ✅ 100% COMPLETO E TESTADO
@@ -216,7 +219,7 @@ LONGO PRAZO (Opcional):
 ================================================================================
 
 1. INSTALAR:
-   code --install-extension local-ai-vscode-0.2.0.vsix
+  code --install-extension local-ai-vscode-0.4.0.vsix
 
    Ou:
    File → Install from VSIX → local-ai-vscode-0.2.0.vsix

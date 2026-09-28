@@ -18,16 +18,30 @@ echo "  ==================================================="
 echo "  ${BOLD}    LOCAL AI ASSISTANT - INSTALADOR${RESET}"
 echo "  ==================================================="
 echo
-echo "   Extensao de IA 100% local para VS Code."
-echo "   Seu codigo nunca sai da maquina."
+echo "   Extensao de IA para VS Code com Ollama local."
+echo "   No modo Ollama, seu codigo fica na maquina."
 echo
 echo "  ---------------------------------------------------"
 echo
 
-# ---------- 1. Localizar o pacote .vsix ----------
+# ---------- 1. Localizar a maior versao do pacote .vsix ----------
 echo "  [1/4] Procurando o pacote da extensao..."
 
-VSIX=$(ls -t local-ai-vscode-*.vsix 2>/dev/null | head -n 1 || true)
+VSIX=""
+BEST_VERSION=""
+BEST_KEY=""
+for candidate in local-ai-vscode-*.vsix; do
+  [ -f "$candidate" ] || continue
+  version=${candidate#local-ai-vscode-}
+  version=${version%.vsix}
+  IFS=. read -r major minor patch <<< "$version"
+  [[ ${major:-} =~ ^[0-9]+$ && ${minor:-} =~ ^[0-9]+$ && ${patch:-} =~ ^[0-9]+$ ]] || continue
+  version_key=$(printf '%03d%03d%03d' "$((10#$major))" "$((10#$minor))" "$((10#$patch))")
+  if [ -z "$BEST_KEY" ] || [[ "$version_key" > "$BEST_KEY" ]]; then
+    VSIX="$candidate"
+    BEST_KEY="$version_key"
+  fi
+done
 
 if [ -z "$VSIX" ]; then
   echo

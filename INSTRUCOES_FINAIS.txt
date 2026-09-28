@@ -3,6 +3,9 @@
                       INSTRUÇÕES FINAIS
 ================================================================================
 
+DOCUMENTO HISTORICO: o status de build abaixo esta desatualizado.
+Consulte README.md e package.json para os comandos atuais.
+
 🎉 PARABÉNS! Você tem uma extensão VS Code PROFISSIONAL E COMPLETA!
 
 ================================================================================

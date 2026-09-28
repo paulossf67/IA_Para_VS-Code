@@ -302,12 +302,6 @@
           "default": true,
           "description": "Mostrar dashboard com métricas do projeto"
         },
-        "local-ai.aiProvider": {
-          "type": "string",
-          "default": "ollama",
-          "enum": ["ollama", "claude", "gpt", "gemini"],
-          "description": "Provedor de IA a usar"
-        },
         "local-ai.enableSemanticSearch": {
           "type": "boolean",
           "default": true,
@@ -346,7 +340,8 @@
         {
           "type": "webview",
           "id": "local-ai.dashboard",
-          "name": "Dashboard"
+          "name": "Dashboard",
+          "when": "local-ai.dashboardEnabled"
         }
       ]
     }
@@ -356,7 +351,7 @@
     "compile": "tsc -p ./ && node scripts/copy-assets.js",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --allow-missing-repository",
-    "test": "node ./out/test/runTest.js",
+    "test": "vitest run",
     "test:unit": "vitest run"
   },
   "devDependencies": {

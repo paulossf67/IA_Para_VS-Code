@@ -258,6 +258,11 @@ export function getAIConfig(storage: vscode.Memento): AIConfig | null {
   return storage.get<AIConfig>(CONFIG_KEY) ?? null;
 }
 
+export function requiresOllama(storage: vscode.Memento): boolean {
+  const config = getAIConfig(storage);
+  return !config || config.provider === 'ollama';
+}
+
 export async function resetAIConfig(storage: vscode.Memento, secrets: vscode.SecretStorage): Promise<void> {
   await storage.update(CONFIG_KEY, null);
   await secrets.delete(API_KEY_SECRET);
