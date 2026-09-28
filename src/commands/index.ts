@@ -11,7 +11,7 @@ import {
   SYSTEM_PROMPT,
 } from '../utils/ollama';
 import { getProjectContext } from '../utils/projectContext';
-import { getSelectedFilesConfig } from '../utils/contextSelector';
+import { getSelectedFilesConfig } from '../utils/contextStorage';
 import { migrateFromContextSelector } from '../utils/advancedContextManager';
 import { analyzeGitDiff, generateCommitMessage, validateBeforePush } from '../utils/gitIntegration';
 import { configureAIProvider } from '../utils/multiAI';
@@ -19,10 +19,6 @@ import { AdvancedContextManager, showContextGroupsUI } from '../utils/advancedCo
 import { SnippetManager, showSnippetsUI } from '../utils/snippetManager';
 import { SemanticSearcher } from '../utils/semanticSearch';
 import { CodeGenetics } from '../utils/codeGenetics';
-import { BugDetective, showBugDetectiveUI } from '../utils/bugDetective';
-import { showPerformanceProfilerUI } from '../utils/performanceProfiler';
-import { showDocGeneratorUI } from '../utils/docGenerator';
-import { showGitHubPRReviewUI, promptForToken, clearToken } from '../utils/githubPRReview';
 
 function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -419,52 +415,9 @@ ${prefix}
     })
   );
 
-  // 🐛 Analisa o arquivo aberto em busca de padrões de bug conhecidos
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.detectBugs', async () => {
-      await showBugDetectiveUI(new BugDetective());
-    })
-  );
-
-  // ⚡ Aponta gargalos: loops aninhados, eval(), padrões O(n²)
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.profilePerformance', async () => {
-      await showPerformanceProfilerUI();
-    })
-  );
-
-  // 📚 Gera README/CONTRIBUTING/ARCHITECTURE/API do projeto (pede confirmação
-  // antes de sobrescrever arquivos existentes)
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.generateProjectDocs', async () => {
-      await showDocGeneratorUI();
-    })
-  );
-
-  // 🔗 Revisa o PR do branch atual e publica o resultado como comentário
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.reviewPR', async () => {
-      await showGitHubPRReviewUI(context.secrets);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.setGitHubToken', async () => {
-      await promptForToken(context.secrets);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.clearGitHubToken', async () => {
-      await clearToken(context.secrets);
-    })
-  );
-
   // ============================================================
-  // 🚀 13 FEATURES FUTURAS
+  // 🚀 ADVANCED CONTEXT MANAGER
   // ============================================================
-
-  // 1️⃣ ADVANCED CONTEXT MANAGER
   if (storage) {
     context.subscriptions.push(
       vscode.commands.registerCommand('local-ai.organizeContext', async () => {

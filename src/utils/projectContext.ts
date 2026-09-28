@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import type { SelectedFilesConfig } from './contextSelector';
+import type { SelectedFilesConfig } from './contextStorage';
 import { getConfig } from './ollama';
 
 /** Pastas que nunca entram no contexto (build, deps, artefatos). */
 const EXCLUDE_GLOB =
   '**/{node_modules,.git,.vscode,.vscode-test,out,dist,build,coverage,.next,.nuxt,target,vendor,__pycache__,.venv,venv,bin,obj}/**';
 
-/** Só código vira contexto — .md/.lock/imagens gastam orçamento sem ajudar. */
+/** Extensões textuais úteis para contexto; binários continuam sendo descartados. */
 const CODE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte',
   '.py', '.rb', '.php', '.go', '.rs', '.java', '.kt', '.swift',
   '.c', '.h', '.cpp', '.hpp', '.cs', '.scala', '.sh', '.ps1',
-  '.sql', '.css', '.scss', '.html',
+  '.sql', '.css', '.scss', '.html', '.md', '.mdx', '.txt',
 ]);
 
 /** Configs pequenas que dizem muito sobre o projeto. */

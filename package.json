@@ -88,30 +88,6 @@
         "title": "Local AI: Limpar Seleção de Arquivos"
       },
       {
-        "command": "local-ai.reviewPR",
-        "title": "Local AI: Revisar Pull Request no GitHub"
-      },
-      {
-        "command": "local-ai.setGitHubToken",
-        "title": "Local AI: Configurar Token do GitHub"
-      },
-      {
-        "command": "local-ai.clearGitHubToken",
-        "title": "Local AI: Remover Token do GitHub"
-      },
-      {
-        "command": "local-ai.detectBugs",
-        "title": "Local AI: Detectar Bugs no Arquivo"
-      },
-      {
-        "command": "local-ai.profilePerformance",
-        "title": "Local AI: Analisar Performance do Arquivo"
-      },
-      {
-        "command": "local-ai.generateProjectDocs",
-        "title": "Local AI: Gerar Documentação do Projeto"
-      },
-      {
         "command": "local-ai.configureAI",
         "title": "Local AI: Configurar Provedor IA"
       },
@@ -331,12 +307,6 @@
           "default": "ollama",
           "enum": ["ollama", "claude", "gpt", "gemini"],
           "description": "Provedor de IA a usar"
-        },
-        "local-ai.githubToken": {
-          "type": "string",
-          "default": "",
-          "markdownDeprecationMessage": "**Descontinuado.** O token agora fica no armazenamento seguro do VS Code, não em settings.json (que é texto plano e sincroniza entre máquinas). Um valor presente aqui é migrado e apagado automaticamente. Use o comando **Local AI: Configurar Token do GitHub**.",
-          "markdownDescription": "Descontinuado — use o comando \"Local AI: Configurar Token do GitHub\"."
         },
         "local-ai.enableSemanticSearch": {
           "type": "boolean",

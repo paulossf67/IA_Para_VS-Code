@@ -68,7 +68,7 @@ describe('ChatViewProvider Integration', () => {
       clearContextCache: vi.fn(),
     }));
 
-    vi.doMock('../utils/contextSelector', () => ({
+    vi.doMock('../utils/contextStorage', () => ({
       getSelectedFilesConfig: vi.fn().mockReturnValue(null),
     }));
 

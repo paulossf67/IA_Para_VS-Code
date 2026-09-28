@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { chat, generateEmbedding, generateEmbeddingsBatch } from './ollama';
 import { getProjectContext } from './projectContext';
-import { getSelectedFilesConfig } from './contextSelector';
+import { getSelectedFilesConfig } from './contextStorage';
 
 export interface SearchableItem {
   id: string;

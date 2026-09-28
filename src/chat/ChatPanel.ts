@@ -9,7 +9,7 @@ import {
   SYSTEM_PROMPT,
 } from '../utils/ollama';
 import { getProjectContext, clearContextCache } from '../utils/projectContext';
-import { getSelectedFilesConfig } from '../utils/contextSelector';
+import { getSelectedFilesConfig } from '../utils/contextStorage';
 import { chatStreamWithAI, getAIConfig } from '../utils/multiAI';
 import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';

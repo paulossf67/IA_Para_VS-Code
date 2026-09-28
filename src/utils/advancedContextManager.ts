@@ -9,7 +9,7 @@ const CODE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte',
   '.py', '.rb', '.php', '.go', '.rs', '.java', '.kt', '.swift',
   '.c', '.h', '.cpp', '.hpp', '.cs', '.scala', '.sh', '.ps1',
-  '.sql', '.css', '.scss', '.html',
+  '.sql', '.css', '.scss', '.html', '.md', '.mdx', '.txt',
 ]);
 
 const KEY_CONFIG_FILES = new Set([
@@ -21,6 +21,7 @@ const ENTRY_HINTS = ['index', 'main', 'app', 'extension', 'server', 'cli'];
 
 const MAX_FILES_INCLUDED = 25;
 const MAX_CHARS_PER_FILE = 6000;
+const MAX_FILES_SCANNED = 2000;
 
 export interface ContextGroup {
   id: string;
@@ -66,11 +67,8 @@ function fence(relPath: string, content: string): string {
   return `#### ${relPath}\n\`\`\`${ext}\n${content}\n\`\`\`\n`;
 }
 
-function matchPatterns(filePath: string, patterns: string[]): boolean {
-  return patterns.some(pattern => {
-    const regex = new RegExp('^' + pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$');
-    return regex.test(filePath) || regex.test(path.basename(filePath));
-  });
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
 export class AdvancedContextManager {
@@ -150,7 +148,9 @@ export class AdvancedContextManager {
     if (!selected || selected.length === 0) return null;
 
     const fileUris = selected.map(item => item.uri);
-    return this.createGroupFromFiles(name, fileUris, [], 10);
+    const group = await this.createGroupFromFiles(name, fileUris, [], 10);
+    await this.selectGroup(group.id);
+    return group;
   }
 
   async updateGroup(groupId: string, updates: Partial<ContextGroup>): Promise<void> {
@@ -193,57 +193,71 @@ export class AdvancedContextManager {
 
     if (!vscode.workspace.workspaceFolders) return '';
 
-    const sortedGroups = config.groups.sort((a, b) => b.priority - a.priority);
     const budget = getCharBudget();
-
     let context = '## Contexto do Projeto (Grupos Selecionados)\n\n';
     let used = 0;
 
-    for (const group of sortedGroups) {
-      if (used >= budget) break;
+    const group = selectedGroup;
+    const explicitFiles = new Set(group.files.map(normalizePath));
+    const candidateUris = new Map<string, vscode.Uri>();
 
-      // Find files matching this group's patterns
-      const uris = await vscode.workspace.findFiles(
-        `{${group.includePatterns.join(',')}}`,
-        EXCLUDE_GLOB,
-        200
-      );
-
-      const candidates = uris
-        .map(uri => ({ uri, rel: vscode.workspace.asRelativePath(uri) }))
-        .filter(f => isTextCandidate(f.rel) && matchPatterns(f.rel, group.includePatterns))
-        .filter(f => !group.excludePatterns.some(p => matchPatterns(f.rel, [p])));
-
-      if (candidates.length === 0) continue;
-
-      context += `### ${group.name} (Prioridade: ${group.priority}/10)\n`;
-      if (group.tags.length > 0) {
-        context += `**Tags:** ${group.tags.join(', ')}\n`;
+    if (explicitFiles.size > 0) {
+      const workspaceUris = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, MAX_FILES_SCANNED);
+      for (const uri of workspaceUris) {
+        const rel = normalizePath(vscode.workspace.asRelativePath(uri));
+        if (explicitFiles.has(rel)) candidateUris.set(rel, uri);
       }
-      context += '\n';
-
-      for (const file of candidates) {
-        if (used >= budget) break;
-
-        const content = await readFileText(file.uri);
-        if (!content || !content.trim()) continue;
-
-        const remaining = budget - used;
-        let slice = content.slice(0, Math.min(MAX_CHARS_PER_FILE, remaining));
-        if (slice.length < content.length) {
-          slice += `\n… (arquivo truncado — ${content.length} caracteres no total)`;
-        }
-
-        const block = fence(file.rel, slice);
-        if (used + block.length > budget && used > 0) break;
-
-        context += block;
-        used += block.length;
-      }
-      context += '\n';
     }
 
-    return context.slice(0, budget);
+    for (const pattern of group.includePatterns) {
+      if (!pattern.trim()) continue;
+      const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
+      for (const uri of uris) {
+        const rel = normalizePath(vscode.workspace.asRelativePath(uri));
+        candidateUris.set(rel, uri);
+      }
+    }
+
+    for (const pattern of group.excludePatterns) {
+      if (!pattern.trim()) continue;
+      const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
+      for (const uri of uris) {
+        candidateUris.delete(normalizePath(vscode.workspace.asRelativePath(uri)));
+      }
+    }
+
+    const candidates = [...candidateUris.entries()]
+      .map(([rel, uri]) => ({ uri, rel }))
+      .filter((file) => isTextCandidate(file.rel) || explicitFiles.has(file.rel));
+
+    if (candidates.length === 0) return '';
+
+    context += `### ${group.name} (Prioridade: ${group.priority}/10)\n`;
+    if (group.tags.length > 0) {
+      context += `**Tags:** ${group.tags.join(', ')}\n`;
+    }
+    context += '\n';
+
+    for (const file of candidates.slice(0, MAX_FILES_INCLUDED)) {
+      if (used >= budget) break;
+
+      const content = await readFileText(file.uri);
+      if (!content || !content.trim()) continue;
+
+      const remaining = budget - used;
+      let slice = content.slice(0, Math.min(MAX_CHARS_PER_FILE, remaining));
+      if (slice.length < content.length) {
+        slice += `\n… (arquivo truncado — ${content.length} caracteres no total)`;
+      }
+
+      const block = fence(file.rel, slice);
+      if (used + block.length > budget && used > 0) break;
+
+      context += block;
+      used += block.length;
+    }
+
+    return used > 0 ? context.slice(0, budget) : '';
   }
 
   async autoDetectGroups(): Promise<void> {
@@ -335,6 +349,8 @@ export async function showContextGroupsUI(storage: vscode.Memento): Promise<void
     await manager.updateGroup(newGroup.id, { 
       includePatterns: patterns.split(',').map(p => p.trim()) 
     });
+    await manager.selectGroup(newGroup.id);
+    vscode.window.showInformationMessage(`Grupo "${name}" criado e selecionado`);
     return;
   }
 
