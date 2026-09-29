@@ -15,6 +15,10 @@ import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';
 
 type WebviewMessage = { type: string; [key: string]: unknown };
+interface QueuedPrompt {
+  text: string;
+  resolve?: (response: string | undefined) => void;
+}
 
 export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = 'local-ai.chatView';
@@ -30,7 +34,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private streamingText?: string;
 
   /** Fila de prompts: comandos disparados durante uma resposta esperam a vez */
-  private promptQueue: string[] = [];
+  private promptQueue: QueuedPrompt[] = [];
   private isGenerating = false;
 
   /** Último editor de texto usado (o foco na webview não conta) */
@@ -65,6 +69,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   dispose() {
     this.abortController?.abort();
+    this.cancelQueuedPrompts();
     this.saveHistoryToStorage();
     this.disposables.forEach((d) => d.dispose());
   }
@@ -162,13 +167,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
           this.enqueue(String(data.text ?? ''));
           break;
         case 'clearChat':
-          this.promptQueue = [];
+          this.cancelQueuedPrompts();
           this.abortController?.abort();
           this.messages = [{ role: 'system', content: SYSTEM_PROMPT }];
           this.post({ type: 'cleared' });
           break;
         case 'stopGeneration':
-          this.promptQueue = [];
+          this.cancelQueuedPrompts();
           this.abortController?.abort();
           break;
         case 'copyCode':
@@ -194,6 +199,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   public async sendPrompt(prompt: string, title?: string) {
     await this.show();
     this.enqueue(title ? `**${title}**\n\n${prompt}` : prompt);
+  }
+
+  /** Enfileira um prompt e devolve a resposta completa ao comando solicitante. */
+  public async sendPromptAndWait(prompt: string, title?: string): Promise<string | undefined> {
+    await this.show();
+    const text = title ? `**${title}**\n\n${prompt}` : prompt;
+    return new Promise((resolve) => this.enqueue(text, resolve));
   }
 
   private onWebviewReady() {
@@ -226,10 +238,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
   }
 
-  private enqueue(text: string) {
+  private enqueue(text: string, resolve?: (response: string | undefined) => void) {
     if (!text.trim()) return;
-    this.promptQueue.push(text);
+    this.promptQueue.push({ text, resolve });
     void this.processQueue();
+  }
+
+  private cancelQueuedPrompts() {
+    this.promptQueue.splice(0).forEach((queued) => queued.resolve?.(undefined));
   }
 
   private async processQueue() {
@@ -237,8 +253,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.isGenerating = true;
     try {
       while (this.promptQueue.length > 0) {
-        const next = this.promptQueue.shift()!;
-        await this.handleUserMessage(next);
+        const queued = this.promptQueue.shift()!;
+        try {
+          queued.resolve?.(await this.handleUserMessage(queued.text));
+        } catch (error) {
+          queued.resolve?.(undefined);
+          const message = error instanceof Error ? error.message : String(error);
+          this.post({ type: 'error', message });
+        }
       }
     } finally {
       this.isGenerating = false;
@@ -253,6 +275,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         message:
           'Ollama não está rodando!\n\n1. Instale: https://ollama.com\n2. Rode no terminal: ollama serve\n3. Baixe um modelo: ollama pull qwen2.5-coder:7b',
       });
+      return;
       return;
     }
 
@@ -317,6 +340,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.messages.push({ role: 'assistant', content: fullResponse });
       this.saveHistoryToStorage();
       this.post({ type: 'endAssistant' });
+      return fullResponse;
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         if (fullResponse.trim()) {
@@ -325,9 +349,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
           this.messages.pop();
         }
         this.post({ type: 'endAssistant', stopped: true });
+        return;
       } else {
         this.messages.pop();
         this.post({ type: 'error', message: err?.message || 'Erro desconhecido' });
+        return;
       }
     } finally {
       this.abortController = undefined;

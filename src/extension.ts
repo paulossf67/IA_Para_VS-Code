@@ -3,7 +3,7 @@ import { ChatViewProvider } from './chat/ChatPanel';
 import { LocalAIInlineCompletionProvider } from './completion/InlineCompletionProvider';
 import { registerCommands } from './commands';
 import { checkOllamaAvailable, getConfig, isModelInstalled, listModels } from './utils/ollama';
-import { analyzeCodeOnSave } from './utils/autoReview';
+import { analyzeCodeOnSave, disposeDiagnostics, DocumentReviewScheduler } from './utils/autoReview';
 import { DashboardProvider } from './utils/dashboardProvider';
 import { requiresOllama } from './utils/multiAI';
 
@@ -38,14 +38,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ✅ FEATURE 9: Auto Code Review (on save)
   // Debounce: salvar em sequência (Ctrl+S repetido, save-all) só dispara uma análise.
-  let reviewTimer: NodeJS.Timeout | undefined;
+  const reviewScheduler = new DocumentReviewScheduler();
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
       if (!vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) return;
-      if (reviewTimer) clearTimeout(reviewTimer);
-      reviewTimer = setTimeout(() => void analyzeCodeOnSave(doc), 1500);
+      const uri = doc.uri.toString();
+      reviewScheduler.schedule(uri, 1500, () => {
+        if (vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) {
+          void analyzeCodeOnSave(doc);
+        }
+      });
     }),
-    { dispose: () => reviewTimer && clearTimeout(reviewTimer) }
+    reviewScheduler
   );
 
   // ✅ FEATURE 10: Inline Completion (autocomplete)
@@ -73,7 +77,18 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  setTimeout(() => void checkSetup(context), 2000);
+  const setupTimer = setTimeout(() => {
+    void checkSetup(context).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(`Local AI: falha ao verificar o Ollama. ${message}`);
+    });
+  }, 2000);
+  context.subscriptions.push({
+    dispose: () => {
+      clearTimeout(setupTimer);
+      disposeDiagnostics();
+    },
+  });
 }
 
 async function checkSetup(context: vscode.ExtensionContext) {

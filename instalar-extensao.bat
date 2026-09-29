@@ -9,7 +9,7 @@ echo       LOCAL AI ASSISTANT - INSTALADOR
 echo  ===================================================
 echo.
 echo   Extensao de IA para VS Code com Ollama local.
-echo   No modo Ollama, seu codigo fica na maquina.
+echo   O modo local usa seu computador para processar o codigo.
 echo.
 echo  ---------------------------------------------------
 echo.
@@ -42,8 +42,6 @@ echo.
 REM ---------- 2. Verificar o VS Code ----------
 echo  [2/4] Verificando o VS Code...
 
-REM Procura o code.cmd pelo PATH e, se nao achar, nos locais padrao de
-REM instalacao - quem nunca rodou "Install 'code' command in PATH" nao o tem.
 set "CODE="
 for /f "delims=" %%P in ('where code.cmd 2^>nul') do (
     if not defined CODE set "CODE=%%P"
@@ -115,7 +113,6 @@ goto :resumo
 echo        Ollama esta rodando.
 echo.
 
-REM Verificar se ha algum modelo de codigo instalado
 set "TEM_MODELO="
 for /f "delims=" %%M in ('powershell -NoProfile -Command "try { $m = (Invoke-RestMethod -Uri 'http://localhost:11434/api/tags' -TimeoutSec 5).models; if ($m -and $m.Count -gt 0) { 'SIM' } else { 'NAO' } } catch { 'NAO' }" 2^>nul') do set "TEM_MODELO=%%M"
 
@@ -135,6 +132,7 @@ if /i "!BAIXAR!"=="S" (
     echo   Tudo bem. Quando quiser, rode: ollama pull qwen2.5-coder:7b
     echo.
 )
+
 goto :resumo
 
 :listar_modelos
@@ -143,22 +141,14 @@ powershell -NoProfile -Command "(Invoke-RestMethod -Uri 'http://localhost:11434/
 echo.
 
 :resumo
-echo  ---------------------------------------------------
 echo.
-echo   INSTALACAO CONCLUIDA
+echo  ===================================================
+echo       INSTALACAO CONCLUIDA
+echo  ===================================================
 echo.
-echo   Proximos passos:
-echo     1. Abra o VS Code (ou recarregue: Ctrl+Shift+P, Reload Window)
-echo     2. Pressione Ctrl+Shift+A para abrir o chat
-echo     3. Selecione um codigo, clique com o botao direito,
-echo        menu "Local AI"
-echo.
-echo   Configuracoes: Settings, procure por "Local AI"
-echo   Todos os comandos: Ctrl+Shift+P, digite "Local AI"
-echo.
-echo  ---------------------------------------------------
-echo.
+goto :fim
 
 :fim
+echo.
 pause
 endlocal

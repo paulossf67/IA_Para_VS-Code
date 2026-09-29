@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as vscode from 'vscode';
+import { getSelectedCode } from '../commands';
 
 // Mocks de VS Code API
 const mockMemento = {
@@ -207,6 +208,26 @@ describe('ChatViewProvider Integration', () => {
     expect(txt).toContain('Pergunta');
   });
 
+  it('usa o documento inteiro quando não há seleção para corrigir', () => {
+    const document = {
+      languageId: 'typescript',
+      getText: vi.fn().mockReturnValue('const x = 1;\nconsole.log(x);'),
+    };
+
+    (vscode as any).window.activeTextEditor = {
+      document,
+      selection: { isEmpty: true },
+    };
+
+    const selected = getSelectedCode();
+
+    expect(selected).toEqual({
+      code: 'const x = 1;\nconsole.log(x);',
+      language: 'typescript',
+    });
+    expect(document.getText).toHaveBeenCalled();
+  });
+
   it('rejeita limpeza de histórico sem confirmação', () => {
     const shouldClear = false;
 
@@ -244,6 +265,14 @@ describe('ChatViewProvider Integration', () => {
     // O processamento e disparado sem await (void processQueue), entao o teste
     // espera a fila drenar em vez de verificar no mesmo tick.
     await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('devolve a resposta completa ao comando que aguarda o resultado', async () => {
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+
+    await expect(provider.sendPromptAndWait('Corrija este código', 'Corrigir Código'))
+      .resolves.toBe('Resposta da IA');
   });
 });
 
