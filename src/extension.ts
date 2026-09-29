@@ -3,9 +3,10 @@ import { ChatViewProvider } from './chat/ChatPanel';
 import { LocalAIInlineCompletionProvider } from './completion/InlineCompletionProvider';
 import { registerCommands } from './commands';
 import { checkOllamaAvailable, getConfig, isModelInstalled, isVisionModel, listModels } from './utils/ollama';
-import { analyzeCodeOnSave, disposeDiagnostics, DocumentReviewScheduler } from './utils/autoReview';
+import { analyzeCodeOnSave, CodeReviewActionProvider, disposeDiagnostics, DocumentReviewScheduler } from './utils/autoReview';
 import { DashboardProvider } from './utils/dashboardProvider';
 import { requiresOllama } from './utils/multiAI';
+import { CodePreviewProvider, codePreviewProvider } from './utils/codePreview';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Assistant ativado!');
@@ -24,6 +25,10 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     { dispose: () => { delete (globalThis as any).__localAIChatProvider; } }
   );
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(CodePreviewProvider.scheme, codePreviewProvider),
+    vscode.workspace.onDidCloseTextDocument((document) => codePreviewProvider.release(document.uri))
+  );
 
   // ✅ FEATURE 2: Dashboard (Analytics)
   const dashboardProvider = new DashboardProvider(context.extensionUri, context);
@@ -40,6 +45,16 @@ export function activate(context: vscode.ExtensionContext) {
   // Debounce: salvar em sequência (Ctrl+S repetido, save-all) só dispara uma análise.
   const reviewScheduler = new DocumentReviewScheduler();
   context.subscriptions.push(
+    vscode.commands.registerCommand('local-ai.reviewDocument', (document: vscode.TextDocument) => {
+      if (vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) {
+        void analyzeCodeOnSave(document);
+      }
+    }),
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file' },
+      new CodeReviewActionProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    ),
     vscode.workspace.onDidSaveTextDocument((doc) => {
       if (!vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) return;
       const uri = doc.uri.toString();

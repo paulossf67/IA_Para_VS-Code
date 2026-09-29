@@ -19,6 +19,27 @@ export interface CodeReviewChunk {
   endLine: number;
 }
 
+export class CodeReviewActionProvider implements vscode.CodeActionProvider {
+  provideCodeActions(
+    _document: vscode.TextDocument,
+    _range: vscode.Range,
+    context: vscode.CodeActionContext
+  ): vscode.CodeAction[] {
+    return context.diagnostics
+      .filter((diagnostic) => diagnostic.source === 'Local AI Review')
+      .map((diagnostic) => {
+        const action = new vscode.CodeAction('Corrigir com Local AI', vscode.CodeActionKind.QuickFix);
+        action.diagnostics = [diagnostic];
+        action.command = {
+          title: action.title,
+          command: 'local-ai.fixDiagnostic',
+          arguments: [diagnostic.range, diagnostic.message, typeof diagnostic.code === 'string' ? diagnostic.code : ''],
+        };
+        return action;
+      });
+  }
+}
+
 export class DocumentReviewScheduler {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -56,22 +77,35 @@ export async function analyzeCodeOnSave(document: vscode.TextDocument): Promise<
   try {
     const code = document.getText();
     const issues = code.trim()
-      ? await findCodeIssues(code, document.languageId, getCharBudget())
+      ? await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Local AI: analisando código',
+          cancellable: false,
+        },
+        (progress) => findCodeIssues(code, document.languageId, getCharBudget(), progress)
+      )
       : [];
 
     if (document.version !== version || latestAnalysisByUri.get(uri) !== analysisId) return;
 
-    const diagnostics = issues.map((issue) =>
-      new vscode.Diagnostic(
+    const diagnostics = issues.map((issue) => {
+      const diagnostic = new vscode.Diagnostic(
         new vscode.Range(issue.line - 1, 0, issue.line - 1, document.lineAt(issue.line - 1).text.length),
-        `[Local AI] ${issue.message}`,
+        `[Local AI] ${issue.message}\nSugestão: ${issue.suggestion}`,
         issue.severity === 'error' ? vscode.DiagnosticSeverity.Error :
         issue.severity === 'warning' ? vscode.DiagnosticSeverity.Warning :
         vscode.DiagnosticSeverity.Information
-      )
-    );
+      );
+      diagnostic.source = 'Local AI Review';
+      diagnostic.code = issue.suggestion;
+      return diagnostic;
+    });
 
     DIAGNOSTIC_COLLECTION.set(document.uri, diagnostics);
+    if (code.trim() && issues.length === 0) {
+      void vscode.window.showInformationMessage('Local AI: nenhum problema encontrado; o código parece correto.');
+    }
   } catch (error) {
     if (latestAnalysisByUri.get(uri) === analysisId) {
       const message = error instanceof Error ? error.message : String(error);
@@ -170,12 +204,21 @@ export function parseCodeIssues(
   });
 }
 
-async function findCodeIssues(code: string, language: string, budget: number): Promise<CodeIssue[]> {
+async function findCodeIssues(
+  code: string,
+  language: string,
+  budget: number,
+  progress?: vscode.Progress<{ message?: string; increment?: number }>
+): Promise<CodeIssue[]> {
   const lines = code.split(/\r?\n/);
   const chunks = createCodeChunks(code, budget);
   const issues: CodeIssue[] = [];
 
-  for (const chunk of chunks) {
+  for (const [chunkIndex, chunk] of chunks.entries()) {
+    progress?.report({
+      message: `Trecho ${chunkIndex + 1}/${chunks.length}`,
+      increment: 100 / chunks.length,
+    });
     const prompt = `Analise este trecho de código ${language}. As linhas estão numeradas com a linha absoluta do arquivo.
 Retorne APENAS um array JSON com issues críticos: [{"line": N, "severity": "error|warning|info", "message": "...", "suggestion": "..."}].
 Use somente linhas entre ${chunk.startLine} e ${chunk.endLine}. Se não encontrar issues, retorne [].

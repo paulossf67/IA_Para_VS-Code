@@ -2,7 +2,7 @@
   "name": "local-ai-vscode",
   "displayName": "Local AI Assistant",
   "description": "Assistente de IA 100% local para VS Code (Ollama). Chat, autocomplete e comandos de código.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "paulosergio",
   "license": "MIT",
   "repository": {
@@ -39,6 +39,14 @@
         "command": "local-ai.openChat",
         "title": "Local AI: Abrir Chat",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "local-ai.createCode",
+        "title": "Local AI: Criar Código"
+      },
+      {
+        "command": "local-ai.validateWorkspace",
+        "title": "Local AI: Validar Projeto"
       },
       {
         "command": "local-ai.explainCode",
@@ -142,6 +150,11 @@
     "menus": {
       "editor/context": [
         {
+          "command": "local-ai.createCode",
+          "group": "local-ai@0",
+          "when": "editorTextFocus"
+        },
+        {
           "command": "local-ai.explainCode",
           "group": "local-ai@1",
           "when": "editorHasSelection"
@@ -170,6 +183,12 @@
       "commandPalette": [
         {
           "command": "local-ai.openChat"
+        },
+        {
+          "command": "local-ai.createCode"
+        },
+        {
+          "command": "local-ai.validateWorkspace"
         },
         {
           "command": "local-ai.explainCode"

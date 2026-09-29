@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   diagnosticDispose: vi.fn(),
   outputAppendLine: vi.fn(),
   outputShow: vi.fn(),
+  showInformationMessage: vi.fn(),
 }));
 
 vi.mock('./ollama', () => ({ chat: mocks.chat, getConfig: mocks.getConfig }));
@@ -16,6 +17,9 @@ vi.mock('vscode', () => ({
   },
   window: {
     createOutputChannel: () => ({ appendLine: mocks.outputAppendLine, show: mocks.outputShow, dispose: vi.fn() }),
+    showInformationMessage: mocks.showInformationMessage,
+    withProgress: async (_options: unknown, task: (progress: { report: () => void }) => Promise<unknown>) =>
+      task({ report: vi.fn() }),
   },
   Range: class Range {
     constructor(
@@ -28,11 +32,19 @@ vi.mock('vscode', () => ({
   Diagnostic: class Diagnostic {
     constructor(public range: unknown, public message: string, public severity: number) {}
   },
+  CodeAction: class CodeAction {
+    diagnostics: unknown[] = [];
+    command: unknown;
+    constructor(public title: string, public kind: number) {}
+  },
+  CodeActionKind: { QuickFix: 1 },
   DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2 },
+  ProgressLocation: { Notification: 15 },
 }));
 
 import {
   analyzeCodeOnSave,
+  CodeReviewActionProvider,
   createCodeChunks,
   DocumentReviewScheduler,
   parseCodeIssues,
@@ -116,6 +128,39 @@ describe('DocumentReviewScheduler', () => {
 });
 
 describe('analyzeCodeOnSave', () => {
+  it('informa quando não encontra problemas no código', async () => {
+    mocks.chat.mockResolvedValueOnce('[]');
+
+    await analyzeCodeOnSave(createDocument('const value = 1;'));
+
+    expect(mocks.diagnosticSet.mock.calls[0][1]).toEqual([]);
+    expect(mocks.showInformationMessage).toHaveBeenCalledWith(
+      'Local AI: nenhum problema encontrado; o código parece correto.'
+    );
+  });
+
+  it('shows AI suggestions in diagnostics and exposes a quick fix', async () => {
+    mocks.chat.mockResolvedValueOnce(issue(1));
+
+    await analyzeCodeOnSave(createDocument('const value = 1;'));
+
+    const [diagnostic] = mocks.diagnosticSet.mock.calls[0][1];
+    expect(diagnostic.message).toContain('Sugestão: Review this code');
+    expect(diagnostic.source).toBe('Local AI Review');
+    expect(diagnostic.code).toBe('Review this code');
+
+    const [action] = new CodeReviewActionProvider().provideCodeActions(
+      createDocument('const value = 1;'),
+      {} as never,
+      { diagnostics: [diagnostic] } as never
+    );
+    expect(action.title).toBe('Corrigir com Local AI');
+    expect(action.command).toMatchObject({
+      command: 'local-ai.fixDiagnostic',
+      arguments: [diagnostic.range, diagnostic.message, 'Review this code'],
+    });
+  });
+
   it('logs failures instead of reporting an empty successful review', async () => {
     mocks.chat.mockRejectedValueOnce(new Error('Ollama indisponível'));
 

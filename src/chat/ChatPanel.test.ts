@@ -91,6 +91,7 @@ describe('ChatViewProvider Integration', () => {
     // clearAllMocks preserva as implementações definidas no beforeEach;
     // resetAllMocks as apagaria e os mocks passariam a devolver undefined.
     vi.clearAllMocks();
+    (vscode.window as any).activeTextEditor = undefined;
   });
 
   it('carrega histórico do storage ao inicializar', () => {
@@ -298,6 +299,47 @@ describe('ChatViewProvider Integration', () => {
 
     await expect(provider.sendPromptAndWait('Corrija este código', 'Corrigir Código'))
       .resolves.toBe('Resposta da IA');
+  });
+
+  it('inclui no prompt a versão ainda não salva do arquivo ativo', async () => {
+    (vscode.window as any).activeTextEditor = {
+      document: {
+        fileName: '/workspace/feature.ts',
+        languageId: 'typescript',
+        isDirty: true,
+        getText: () => 'export const unsavedFeature = true;',
+      },
+    };
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+
+    await provider.sendPromptAndWait('Crie uma função para este arquivo', 'Criar Código');
+
+    const sentMessages = chatStreamMock.mock.calls[0][0];
+    const userMessage = sentMessages.find((message: { role: string }) => message.role === 'user');
+    expect(userMessage.content).toContain('Versão atual não salva de feature.ts');
+    expect(userMessage.content).toContain('export const unsavedFeature = true;');
+  });
+
+  it('envia etapas de progresso ao corrigir código', async () => {
+    chatStreamMock.mockImplementation(async (_messages: unknown, onChunk: (text: string) => void) => {
+      onChunk('Resposta parcial');
+      return 'Resposta parcial';
+    });
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+    const receiveMessage = mockWebview.onDidReceiveMessage.mock.calls[0][0];
+    await receiveMessage({ type: 'ready' });
+
+    await provider.sendPromptAndWait('Corrija este código', 'Corrigir Código');
+
+    const messages = mockWebview.postMessage.mock.calls.map(([message]) => message);
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'progress', stage: 'context' }),
+      expect.objectContaining({ type: 'startAssistant', stage: 'correcting' }),
+      expect.objectContaining({ type: 'progress', stage: 'generating' }),
+      expect.objectContaining({ type: 'endAssistant' }),
+    ]));
   });
 
   it('anexa imagens selecionadas à mensagem enviada ao Ollama', async () => {

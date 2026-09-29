@@ -16,6 +16,7 @@ import { AdvancedContextManager } from '../utils/advancedContextManager';
 import { retryWithBackoff } from '../utils/retry';
 
 type WebviewMessage = { type: string; [key: string]: unknown };
+const MAX_DIRTY_EDITOR_CONTEXT_CHARS = 6000;
 interface QueuedPrompt {
   text: string;
   resolve?: (response: string | undefined) => void;
@@ -322,6 +323,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return;
     }
 
+    this.post({ type: 'progress', stage: 'context', label: 'Preparando o contexto...' });
+
     // Injeta o conteúdo dos arquivos do projeto
     let enrichedText = text;
     if (vscode.workspace.workspaceFolders) {
@@ -353,13 +356,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       }
     }
 
+    const activeDocument = this.lastEditor?.document;
+    if (activeDocument?.isDirty) {
+      const currentContent = activeDocument.getText();
+      const snapshot = currentContent.slice(0, MAX_DIRTY_EDITOR_CONTEXT_CHARS);
+      const truncationNote = currentContent.length > snapshot.length
+        ? '\n… (conteúdo truncado)'
+        : '';
+      enrichedText += `\n\n---\n### Versão atual não salva de ${path.basename(activeDocument.fileName)}\n` +
+        `Use este conteúdo como a versão mais recente do arquivo.\n\n` +
+        `\`\`\`${activeDocument.languageId}\n${snapshot}${truncationNote}\n\`\`\``;
+    }
+
     this.messages.push({
       role: 'user',
       content: enrichedText,
       ...(images.length > 0 ? { images } : {}),
     });
     this.post({ type: 'userMessage', text, attachments: images.length });
-    this.post({ type: 'startAssistant' });
+    const isCorrection = /\b(corrig|corre[cç]|fix|repar|bug)/i.test(text);
+    this.post({
+      type: 'startAssistant',
+      stage: isCorrection ? 'correcting' : 'analyzing',
+      label: isCorrection ? 'Corrigindo o código...' : 'Analisando sua solicitação...',
+    });
 
     const abortController = new AbortController();
     this.abortController = abortController;
@@ -374,6 +394,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         () =>
           this.runChat(
             (chunk) => {
+              this.post({ type: 'progress', stage: 'generating', label: 'Gerando resposta...' });
               fullResponse += chunk;
               this.streamingText = fullResponse;
               this.post({ type: 'chunk', text: chunk });
@@ -572,6 +593,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button id="modelBtn" title="Trocar modelo">🤖 …</button>
   </div>
 
+  <div id="progress" role="status" aria-live="polite" aria-hidden="true">
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="progress-track" aria-hidden="true"><div class="progress-bar"></div></div>
+  </div>
+
   <div id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
 
   <div id="input-area">
@@ -589,6 +615,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const clearBtn = document.getElementById('clearBtn');
     const stopBtn = document.getElementById('stopBtn');
     const modelBtn = document.getElementById('modelBtn');
+    const progress = document.getElementById('progress');
+    const progressLabel = document.getElementById('progressLabel');
 
     const WELCOME = 'Olá! Sou seu assistente de IA local.\\nPosso ajudar a explicar código, gerar documentação, refatorar, criar testes e muito mais.\\n\\nDica: selecione código no editor e use o menu de contexto (botão direito) ou pressione **Ctrl+Shift+A** para abrir o chat.';
 
@@ -690,6 +718,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       stopBtn.style.display = state ? 'inline-block' : 'none';
     }
 
+    function setProgress(stage, label) {
+      if (stage === 'done') {
+        progress.classList.remove('visible');
+        progress.setAttribute('aria-hidden', 'true');
+        return;
+      }
+      progressLabel.textContent = label || 'Processando...';
+      progress.classList.add('visible');
+      progress.setAttribute('aria-hidden', 'false');
+    }
+
     function updateSendButton() {
       sendBtn.disabled = isGenerating || (!input.value.trim() && attachmentCount === 0);
     }
@@ -787,7 +826,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         case 'startAssistant':
           currentAssistantText = '';
           currentAssistantEl = appendMessage('', 'assistant typing', false);
+          setProgress(data.stage, data.label);
           setGenerating(true);
+          break;
+
+        case 'progress':
+          setProgress(data.stage, data.label);
           break;
 
         case 'chunk':
@@ -811,6 +855,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
               }
             }
           }
+          setProgress('done');
           setGenerating(false);
           currentAssistantEl = null;
           break;
@@ -818,11 +863,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         case 'error':
           if (currentAssistantEl && !currentAssistantText.trim()) currentAssistantEl.remove();
           appendMessage(data.message, 'error', false);
+          setProgress('done');
           setGenerating(false);
           currentAssistantEl = null;
           break;
 
         case 'cleared':
+          setProgress('done');
           setGenerating(false);
           currentAssistantEl = null;
           messagesEl.innerHTML = '';
