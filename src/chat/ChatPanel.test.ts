@@ -35,6 +35,7 @@ describe('ChatViewProvider Integration', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
+    (vscode.languages as any).getDiagnostics = () => [];
 
     // Restaura o comportamento de Memento.get: devolver o valor padrão.
     // Sem isso, um mockReturnValue de teste anterior vaza para os seguintes.
@@ -73,6 +74,10 @@ describe('ChatViewProvider Integration', () => {
       getSelectedFilesConfig: vi.fn().mockReturnValue(null),
     }));
 
+    vi.doMock('../utils/gitIntegration', () => ({
+      getWorkspaceGitDiff: vi.fn().mockResolvedValue(null),
+    }));
+
     vi.doMock('../utils/advancedContextManager', () => ({
       AdvancedContextManager: vi.fn().mockImplementation(() => ({
         getContextString: vi.fn().mockResolvedValue(''),
@@ -92,6 +97,7 @@ describe('ChatViewProvider Integration', () => {
     // resetAllMocks as apagaria e os mocks passariam a devolver undefined.
     vi.clearAllMocks();
     (vscode.window as any).activeTextEditor = undefined;
+    (vscode.languages as any).getDiagnostics = () => [];
   });
 
   it('carrega histórico do storage ao inicializar', () => {
@@ -319,6 +325,61 @@ describe('ChatViewProvider Integration', () => {
     const userMessage = sentMessages.find((message: { role: string }) => message.role === 'user');
     expect(userMessage.content).toContain('Versão atual não salva de feature.ts');
     expect(userMessage.content).toContain('export const unsavedFeature = true;');
+  });
+
+  it('inclui erros e avisos do arquivo ativo e ignora mensagens informativas', async () => {
+    (vscode.window as any).activeTextEditor = {
+      document: {
+        fileName: '/workspace/feature.ts',
+        languageId: 'typescript',
+        isDirty: false,
+        uri: { fsPath: '/workspace/feature.ts' },
+        getText: () => 'export const feature = true;',
+      },
+    };
+    (vscode.languages as any).getDiagnostics = () => [
+      {
+        severity: vscode.DiagnosticSeverity.Error,
+        message: 'Cannot find name featureDependency',
+        source: 'TypeScript',
+        range: { start: { line: 2 } },
+      },
+      {
+        severity: vscode.DiagnosticSeverity.Warning,
+        message: 'Unused variable',
+        source: 'ESLint',
+        range: { start: { line: 5 } },
+      },
+      {
+        severity: vscode.DiagnosticSeverity.Information,
+        message: 'Informational hint',
+        range: { start: { line: 7 } },
+      },
+    ];
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+
+    await provider.sendPromptAndWait('Corrija os problemas do arquivo', 'Corrigir Código');
+
+    const sentMessages = chatStreamMock.mock.calls[0][0];
+    const userMessage = sentMessages.find((message: { role: string }) => message.role === 'user');
+    expect(userMessage.content).toContain('Linha 3 (erro) [TypeScript]: Cannot find name featureDependency');
+    expect(userMessage.content).toContain('Linha 6 (aviso) [ESLint]: Unused variable');
+    expect(userMessage.content).not.toContain('Informational hint');
+  });
+
+  it('inclui o diff Git ativo no prompt quando há alterações', async () => {
+    const { getWorkspaceGitDiff } = await import('../utils/gitIntegration');
+    vi.mocked(getWorkspaceGitDiff).mockResolvedValue('### Diff Git do repositório ativo\n\n```diff\n+nova função\n```');
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+
+    await provider.sendPromptAndWait('Explique as alterações', 'Analisar Código');
+
+    const sentMessages = chatStreamMock.mock.calls[0][0];
+    const userMessage = sentMessages.find((message: { role: string }) => message.role === 'user');
+    expect(userMessage.content).toContain('Diff Git do repositório ativo');
+    expect(userMessage.content).toContain('+nova função');
   });
 
   it('envia etapas de progresso ao corrigir código', async () => {

@@ -52,6 +52,7 @@ export const commands = {
 };
 
 export const languages = {
+  getDiagnostics: () => [],
   createDiagnosticCollection: () => ({ set() {}, dispose() {} }),
   registerInlineCompletionItemProvider: () => ({ dispose() {} }),
 };

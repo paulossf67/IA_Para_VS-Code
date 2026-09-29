@@ -49,6 +49,10 @@
         "title": "Local AI: Validar Projeto"
       },
       {
+        "command": "local-ai.reviewCurrentFile",
+        "title": "Local AI: Revisar Arquivo Atual"
+      },
+      {
         "command": "local-ai.explainCode",
         "title": "Local AI: Explicar Código"
       },
@@ -155,6 +159,11 @@
           "when": "editorTextFocus"
         },
         {
+          "command": "local-ai.reviewCurrentFile",
+          "group": "local-ai@0.5",
+          "when": "editorTextFocus"
+        },
+        {
           "command": "local-ai.explainCode",
           "group": "local-ai@1",
           "when": "editorHasSelection"
@@ -189,6 +198,9 @@
         },
         {
           "command": "local-ai.validateWorkspace"
+        },
+        {
+          "command": "local-ai.reviewCurrentFile"
         },
         {
           "command": "local-ai.explainCode"

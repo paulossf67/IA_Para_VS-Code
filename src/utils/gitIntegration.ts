@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { chat } from './ollama';
 
 export interface CommitAnalysis {
@@ -20,8 +21,12 @@ interface Repository {
 
 let gitAPI: GitAPI | null = null;
 
-async function getGitAPI(): Promise<GitAPI | null> {
-  if (gitAPI) return gitAPI;
+async function getGitAPI(forceRefresh = false): Promise<GitAPI | null> {
+  if (gitAPI && !forceRefresh) return gitAPI;
+
+  if (forceRefresh) {
+    gitAPI = null;
+  }
 
   const gitExt = vscode.extensions.getExtension('vscode.git');
   if (!gitExt) {
@@ -59,6 +64,47 @@ async function getGitDiff(cached = true): Promise<string | null> {
     }
 
     return await repo.getDiff(!cached);
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkspaceGitDiff(activeUri?: vscode.Uri): Promise<string | null> {
+  try {
+    const api = await getGitAPI(true);
+    if (!api?.repositories.length) return null;
+
+    const activePath = activeUri?.fsPath;
+    const repository = activePath
+      ? api.repositories
+        .filter((candidate) => {
+          const relative = path.relative(candidate.rootUri.fsPath, activePath);
+          return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+        })
+        .sort((first, second) => second.rootUri.fsPath.length - first.rootUri.fsPath.length)[0]
+      : undefined;
+    const selectedRepository = repository ?? api.repositories[0];
+
+    let staged = '';
+    let unstaged = '';
+    if (typeof selectedRepository.diffIndexWithHEAD === 'function') {
+      [staged, unstaged] = await Promise.all([
+        selectedRepository.diffIndexWithHEAD({ cached: true }),
+        selectedRepository.diffIndexWithHEAD({ cached: false }),
+      ]);
+    } else {
+      unstaged = await selectedRepository.getDiff(true);
+    }
+
+    const sections = [
+      staged.trim() ? `Alterações staged:\n${staged.trim()}` : '',
+      unstaged.trim() ? `Alterações unstaged:\n${unstaged.trim()}` : '',
+    ].filter(Boolean);
+    if (sections.length === 0) return null;
+
+    const diff = sections.join('\n\n');
+    const maxChars = 6000;
+    return `### Diff Git do repositório ativo\n\n\`\`\`diff\n${diff.slice(0, maxChars)}${diff.length > maxChars ? '\n… (diff truncado)' : ''}\n\`\`\``;
   } catch {
     return null;
   }

@@ -3,7 +3,7 @@ import { ChatViewProvider } from './chat/ChatPanel';
 import { LocalAIInlineCompletionProvider } from './completion/InlineCompletionProvider';
 import { registerCommands } from './commands';
 import { checkOllamaAvailable, getConfig, isModelInstalled, isVisionModel, listModels } from './utils/ollama';
-import { analyzeCodeOnSave, CodeReviewActionProvider, disposeDiagnostics, DocumentReviewScheduler } from './utils/autoReview';
+import { analyzeCodeOnSave, CodeReviewActionProvider, disposeDiagnostics, DocumentReviewScheduler, isReviewableDocument } from './utils/autoReview';
 import { DashboardProvider } from './utils/dashboardProvider';
 import { requiresOllama } from './utils/multiAI';
 import { CodePreviewProvider, codePreviewProvider } from './utils/codePreview';
@@ -49,6 +49,18 @@ export function activate(context: vscode.ExtensionContext) {
       if (vscode.workspace.getConfiguration('local-ai').get<boolean>('enableAutoReview', true)) {
         void analyzeCodeOnSave(document);
       }
+    }),
+    vscode.commands.registerCommand('local-ai.reviewCurrentFile', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        void vscode.window.showWarningMessage('Local AI: abra um arquivo de código para revisar.');
+        return;
+      }
+      if (!isReviewableDocument(editor.document)) {
+        void vscode.window.showWarningMessage('Local AI: este tipo de arquivo não é compatível com a revisão.');
+        return;
+      }
+      void analyzeCodeOnSave(editor.document, { manual: true });
     }),
     vscode.languages.registerCodeActionsProvider(
       { scheme: 'file' },

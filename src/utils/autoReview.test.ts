@@ -50,9 +50,9 @@ import {
   parseCodeIssues,
 } from './autoReview';
 
-function createDocument(code: string, version = 1) {
+function createDocument(code: string, version = 1, filePath = '/workspace/sample.ts') {
   return {
-    uri: { fsPath: '/workspace/sample.ts', toString: () => 'file:///workspace/sample.ts' },
+    uri: { fsPath: filePath, toString: () => `file://${filePath}` },
     languageId: 'typescript',
     version,
     getText: () => code,
@@ -137,6 +137,30 @@ describe('analyzeCodeOnSave', () => {
     expect(mocks.showInformationMessage).toHaveBeenCalledWith(
       'Local AI: nenhum problema encontrado; o código parece correto.'
     );
+  });
+
+  it('evita repetir avisos automáticos para o mesmo arquivo dentro do intervalo', async () => {
+    vi.useFakeTimers();
+    mocks.chat.mockResolvedValue('[]');
+    const document = createDocument('const value = 1;', 1, '/workspace/cooldown.ts');
+
+    await analyzeCodeOnSave(document);
+    await analyzeCodeOnSave(document);
+
+    expect(mocks.showInformationMessage).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('sempre informa o resultado limpo quando a revisão é manual', async () => {
+    vi.useFakeTimers();
+    mocks.chat.mockResolvedValue('[]');
+    const document = createDocument('const value = 1;', 1, '/workspace/manual-clean.ts');
+
+    await analyzeCodeOnSave(document);
+    await analyzeCodeOnSave(document, { manual: true });
+
+    expect(mocks.showInformationMessage).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it('shows AI suggestions in diagnostics and exposes a quick fix', async () => {

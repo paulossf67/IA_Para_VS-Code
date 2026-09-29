@@ -22,6 +22,7 @@ import { SemanticSearcher } from '../utils/semanticSearch';
 import { CodeGenetics } from '../utils/codeGenetics';
 import { getValidationScripts, runNpmScript } from '../utils/projectValidation';
 import { codePreviewProvider } from '../utils/codePreview';
+import { GeneratedFile, parseGeneratedFiles } from '../utils/generatedFiles';
 
 export function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -159,7 +160,9 @@ async function showCodeDiffPreview(
   original: string,
   proposed: string,
   fileName: string,
-  languageId: string
+  languageId: string,
+  applyLabel = 'Aplicar Código',
+  discardLabel = 'Descartar'
 ): Promise<boolean> {
   const originalUri = codePreviewProvider.createPreview(original, fileName, 'original', languageId);
   const proposedUri = codePreviewProvider.createPreview(proposed, fileName, 'proposed', languageId);
@@ -173,16 +176,123 @@ async function showCodeDiffPreview(
     );
     const decision = await vscode.window.showInformationMessage(
       'Confira a comparação aberta no editor antes de aplicar.',
-      'Aplicar Código',
-      'Descartar'
+      applyLabel,
+      discardLabel
     );
-    return decision === 'Aplicar Código';
+    return decision === applyLabel;
   } catch (error) {
     codePreviewProvider.release(originalUri);
     codePreviewProvider.release(proposedUri);
     const message = error instanceof Error ? error.message : String(error);
     void vscode.window.showErrorMessage(`Local AI: não foi possível abrir a prévia. ${message}`);
     return false;
+  }
+}
+
+async function runCreateMultipleFilesCommand(
+  chatProvider: ChatViewProvider,
+  description: string,
+  folder: vscode.Uri
+): Promise<void> {
+  const response = await chatProvider.sendPromptAndWait(
+    `Implemente a solicitação abaixo criando os arquivos necessários no diretório selecionado.\n` +
+    `Descrição: ${description}\n` +
+    `Retorne apenas JSON válido neste formato: {"files":[{"path":"src/arquivo.ts","language":"typescript","content":"conteúdo completo"}]}.\n` +
+    `Use caminhos relativos ao diretório selecionado, inclua testes quando apropriado e não use caminhos absolutos nem segmentos .. .\n` +
+    `Limite a resposta a 8 arquivos e escape corretamente quebras de linha e aspas dentro de content.`,
+    'Criar Vários Arquivos'
+  );
+  if (!response) return;
+
+  let files: GeneratedFile[];
+  try {
+    files = parseGeneratedFiles(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showWarningMessage(`Local AI: não foi possível validar os arquivos gerados. ${message}`);
+    return;
+  }
+
+  const entries = files.map((file) => ({
+    ...file,
+    uri: vscode.Uri.joinPath(folder, ...file.path.split('/')),
+    content: file.content.endsWith('\n') ? file.content : `${file.content}\n`,
+  }));
+
+  try {
+    for (const entry of entries) {
+      if (await fileExists(entry.uri)) {
+        void vscode.window.showWarningMessage(`Local AI: ${entry.path} já existe. Nenhum arquivo foi criado.`);
+        return;
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`Local AI: não foi possível verificar os destinos. ${message}`);
+    return;
+  }
+
+  for (const entry of entries) {
+    const approved = await showCodeDiffPreview(
+      '',
+      entry.content,
+      entry.path,
+      entry.language,
+      'Incluir Arquivo',
+      'Cancelar Lote'
+    );
+    if (!approved) return;
+  }
+
+  const confirmation = await vscode.window.showWarningMessage(
+    `Criar ${entries.length} arquivos em ${folder.fsPath}? Nenhum arquivo existente será sobrescrito.`,
+    { modal: true },
+    'Criar Todos'
+  );
+  if (confirmation !== 'Criar Todos') return;
+
+  try {
+    for (const entry of entries) {
+      if (await fileExists(entry.uri)) {
+        void vscode.window.showWarningMessage(`Local AI: ${entry.path} foi criado durante a revisão. Nenhum arquivo foi criado.`);
+        return;
+      }
+    }
+
+    const directories = new Map<string, string[]>();
+    for (const entry of entries) {
+      const segments = entry.path.split('/');
+      for (let depth = 1; depth < segments.length; depth++) {
+        const directorySegments = segments.slice(0, depth);
+        directories.set(directorySegments.join('/'), directorySegments);
+      }
+    }
+    for (const directorySegments of [...directories.values()].sort((first, second) => first.length - second.length)) {
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder, ...directorySegments));
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    for (const entry of entries) {
+      edit.createFile(entry.uri, { overwrite: false, contents: new TextEncoder().encode(entry.content) });
+    }
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      void vscode.window.showErrorMessage('Local AI: não foi possível criar o conjunto de arquivos.');
+      return;
+    }
+
+    const documents = await Promise.all(entries.map((entry) => vscode.workspace.openTextDocument(entry.uri)));
+    await vscode.window.showTextDocument(documents[0]);
+    for (const document of documents) {
+      void vscode.commands.executeCommand('local-ai.reviewDocument', document);
+    }
+    const action = await vscode.window.showInformationMessage(
+      `Local AI: ${entries.length} arquivos criados.`,
+      'Executar Validação'
+    );
+    if (action === 'Executar Validação') await runWorkspaceValidation(chatProvider);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`Local AI: falha ao criar os arquivos. ${message}`);
   }
 }
 
@@ -198,12 +308,29 @@ async function runCreateCodeCommand(chatProvider: ChatViewProvider): Promise<voi
     ? [
       { label: 'Inserir no cursor', value: 'editor' },
       { label: 'Criar um arquivo', value: 'file' },
+      { label: 'Criar vários arquivos', value: 'files' },
     ]
-    : [{ label: 'Criar um arquivo', value: 'file' }];
+    : [
+      { label: 'Criar um arquivo', value: 'file' },
+      { label: 'Criar vários arquivos', value: 'files' },
+    ];
   const destination = await vscode.window.showQuickPick(destinations, {
     placeHolder: 'Onde deseja colocar o código gerado?',
   });
   if (!destination) return;
+
+  if (destination.value === 'files') {
+    const folders = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: 'Selecionar Pasta',
+      defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+    });
+    if (!folders?.[0]) return;
+    await runCreateMultipleFilesCommand(chatProvider, description.trim(), folders[0]);
+    return;
+  }
 
   let targetUri: vscode.Uri | undefined;
   if (destination.value === 'file') {

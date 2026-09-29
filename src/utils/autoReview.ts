@@ -11,6 +11,8 @@ export interface CodeIssue {
 const DIAGNOSTIC_COLLECTION = vscode.languages.createDiagnosticCollection('local-ai');
 const REVIEW_OUTPUT = vscode.window.createOutputChannel('Local AI Review');
 const latestAnalysisByUri = new Map<string, number>();
+const lastCleanNoticeByUri = new Map<string, number>();
+const CLEAN_NOTICE_COOLDOWN_MS = 5 * 60 * 1000;
 let nextAnalysisId = 0;
 
 export interface CodeReviewChunk {
@@ -66,7 +68,14 @@ function getCharBudget(): number {
   return Math.max(2000, Math.floor(numCtx * 0.3 * 3.5)); // 30% do contexto para auto-review
 }
 
-export async function analyzeCodeOnSave(document: vscode.TextDocument): Promise<void> {
+export function isReviewableDocument(document: vscode.TextDocument): boolean {
+  return shouldAnalyze(document);
+}
+
+export async function analyzeCodeOnSave(
+  document: vscode.TextDocument,
+  options: { manual?: boolean } = {}
+): Promise<void> {
   if (!shouldAnalyze(document)) return;
 
   const uri = document.uri.toString();
@@ -103,7 +112,12 @@ export async function analyzeCodeOnSave(document: vscode.TextDocument): Promise<
     });
 
     DIAGNOSTIC_COLLECTION.set(document.uri, diagnostics);
-    if (code.trim() && issues.length === 0) {
+    const lastNotice = lastCleanNoticeByUri.get(uri);
+    const now = Date.now();
+    const shouldNotifyClean = options.manual || lastNotice === undefined || now < lastNotice ||
+      now - lastNotice >= CLEAN_NOTICE_COOLDOWN_MS;
+    if (code.trim() && issues.length === 0 && shouldNotifyClean) {
+      lastCleanNoticeByUri.set(uri, now);
       void vscode.window.showInformationMessage('Local AI: nenhum problema encontrado; o código parece correto.');
     }
   } catch (error) {
