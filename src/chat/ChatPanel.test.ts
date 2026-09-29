@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as vscode from 'vscode';
-import { getSelectedCode } from '../commands';
+import { extractCodeBlock, getSelectedCode } from '../commands';
 
 // Mocks de VS Code API
 const mockMemento = {
@@ -83,6 +83,7 @@ describe('ChatViewProvider Integration', () => {
       retryWithBackoff: vi.fn((fn) => fn()),
     }));
 
+    vi.doMock('vscode', () => vscode);
     ({ ChatViewProvider } = await import('./ChatPanel'));
   });
 
@@ -120,37 +121,52 @@ describe('ChatViewProvider Integration', () => {
     expect(mockMemento.update).toHaveBeenCalledWith('chatHistory', historico);
   });
 
-  it('limita histórico a 100 mensagens', () => {
+  it('salva somente as 100 mensagens mais recentes', () => {
     const manyMessages = Array.from({ length: 150 }, (_, i) => ({
       role: i % 2 === 0 ? 'user' : 'assistant',
       content: `Message ${i}`,
     }));
 
-    const limited = manyMessages.slice(-100);
+    mockMemento.get.mockReturnValue(manyMessages);
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.dispose();
 
-    expect(limited).toHaveLength(100);
-    expect(limited[0].content).toBe('Message 50');
+    const savedHistory = mockMemento.update.mock.calls.at(-1)?.[1];
+    expect(savedHistory).toHaveLength(100);
+    expect(savedHistory[0].content).toBe('Message 50');
   });
 
-  it('limita histórico por tamanho em MB', () => {
-    const maxSizeBytes = 5 * 1024 * 1024;
-    const messages = [
-      { role: 'user', content: 'x'.repeat(1000000) },
-      { role: 'assistant', content: 'y'.repeat(1000000) },
-      { role: 'user', content: 'z'.repeat(1000000) },
-    ];
+  it('salva as mensagens recentes que cabem no limite configurado', () => {
+    const messages = ['antiga', 'recente', 'mais recente'].map((content) => ({
+      role: 'user',
+      content: content.padEnd(1024 * 1024, 'x'),
+    }));
+    getConfigMock.mockReturnValue({
+      ...getConfigMock(),
+      maxHistorySize: 2,
+    });
+    mockMemento.get.mockReturnValue(messages);
 
-    let totalSize = 0;
-    const trimmed = [];
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    provider.dispose();
 
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const size = new TextEncoder().encode(messages[i].content).length;
-      if (totalSize + size > maxSizeBytes) break;
-      trimmed.unshift(messages[i]);
-      totalSize += size;
-    }
+    const savedHistory = mockMemento.update.mock.calls.at(-1)?.[1];
+    expect(savedHistory).toHaveLength(2);
+    expect(savedHistory.map((message: any) => message.content[0])).toEqual(['r', 'm']);
+    expect(savedHistory.reduce(
+      (total: number, message: any) => total + new TextEncoder().encode(message.content).length,
+      0
+    )).toBeLessThanOrEqual(2 * 1024 * 1024);
+  });
 
-    expect(totalSize).toBeLessThanOrEqual(maxSizeBytes);
+  it('não enfileira prompt vazio ou composto apenas por espaços', async () => {
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+
+    await provider.sendPrompt('   ');
+    await provider.sendPrompt('');
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(provider.getHistory()).toEqual([]);
   });
 
   it('formata histórico como markdown para export', () => {
@@ -228,6 +244,15 @@ describe('ChatViewProvider Integration', () => {
     expect(document.getText).toHaveBeenCalled();
   });
 
+  it('extrai uma correção de um único bloco de código', () => {
+    expect(extractCodeBlock('```typescript\nconst value = 2;\n```')).toBe('const value = 2;');
+  });
+
+  it('recusa respostas sem bloco ou com vários blocos de código', () => {
+    expect(extractCodeBlock('Não encontrei uma correção.')).toBeNull();
+    expect(extractCodeBlock('```ts\nconst a = 1;\n```\n```ts\nconst b = 2;\n```')).toBeNull();
+  });
+
   it('rejeita limpeza de histórico sem confirmação', () => {
     const shouldClear = false;
 
@@ -273,6 +298,67 @@ describe('ChatViewProvider Integration', () => {
 
     await expect(provider.sendPromptAndWait('Corrija este código', 'Corrigir Código'))
       .resolves.toBe('Resposta da IA');
+  });
+
+  it('anexa imagens selecionadas à mensagem enviada ao Ollama', async () => {
+    getConfigMock.mockReturnValue({
+      url: 'http://localhost:11434',
+      model: 'llava:latest',
+      maxTokens: 1024,
+      temperature: 0.2,
+      numCtx: 8192,
+      maxHistoryMessages: 20,
+      maxHistorySize: 10,
+    });
+
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    (vscode.window as any).showOpenDialog = vi.fn().mockResolvedValue([
+      vscode.Uri.file('/workspace/foto.png'),
+    ]);
+    vi.spyOn(vscode.workspace.fs, 'readFile').mockResolvedValue(
+      new TextEncoder().encode('imagem')
+    );
+
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+    await (provider as any).attachFiles();
+    const receiveMessage = mockWebview.onDidReceiveMessage.mock.calls[0][0];
+    await receiveMessage({ type: 'sendMessage', text: 'Descreva a imagem' });
+
+    await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalled());
+    const messages = chatStreamMock.mock.calls[0][0];
+    expect(messages.findLast((message: any) => message.role === 'user').images).toEqual([
+      Buffer.from('imagem').toString('base64'),
+    ]);
+  });
+
+  it('anexa arquivos de texto e log no prompt do chat', async () => {
+    const provider = new ChatViewProvider(mockExtensionUri, mockMemento);
+    const showOpenDialog = vi.fn().mockResolvedValue([
+      vscode.Uri.file('/workspace/app.log'),
+      vscode.Uri.file('/workspace/notes.txt'),
+    ]);
+    (vscode.window as any).showOpenDialog = showOpenDialog;
+    vi.spyOn(vscode.workspace.fs, 'readFile')
+      .mockResolvedValueOnce(new TextEncoder().encode('linha 1 do log\nlinha 2 do log'))
+      .mockResolvedValueOnce(new TextEncoder().encode('conteudo do texto'));
+
+    provider.resolveWebviewView(mockWebviewView as any, {} as any, {} as any);
+    await (provider as any).attachFiles();
+    expect(showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({
+      filters: expect.objectContaining({
+        'Textos e logs': expect.arrayContaining(['txt', 'log', 'text']),
+      }),
+    }));
+
+    const receiveMessage = mockWebview.onDidReceiveMessage.mock.calls[0][0];
+    await receiveMessage({ type: 'sendMessage', text: 'Analise os logs e texto' });
+
+    await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalled());
+    const messages = chatStreamMock.mock.calls[0][0];
+    const userMessage = messages.findLast((message: any) => message.role === 'user');
+    expect(userMessage.content).toContain('--- Documento anexado: app.log ---');
+    expect(userMessage.content).toContain('linha 1 do log');
+    expect(userMessage.content).toContain('conteudo do texto');
   });
 });
 

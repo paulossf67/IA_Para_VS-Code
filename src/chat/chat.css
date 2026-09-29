@@ -92,6 +92,11 @@ body {
   background: var(--bg);
 }
 
+#attachBtn {
+  min-width: 40px;
+  padding: 8px;
+}
+
 #input {
   flex: 1;
   background: var(--input-bg);
@@ -106,7 +111,11 @@ body {
   max-height: 160px;
 }
 
-#input:focus { outline: 1px solid var(--vscode-focusBorder); }
+button:focus-visible,
+#input:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
 
 button {
   background: var(--button-bg);

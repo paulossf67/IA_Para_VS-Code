@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ChatViewProvider } from './chat/ChatPanel';
 import { LocalAIInlineCompletionProvider } from './completion/InlineCompletionProvider';
 import { registerCommands } from './commands';
-import { checkOllamaAvailable, getConfig, isModelInstalled, listModels } from './utils/ollama';
+import { checkOllamaAvailable, getConfig, isModelInstalled, isVisionModel, listModels } from './utils/ollama';
 import { analyzeCodeOnSave, disposeDiagnostics, DocumentReviewScheduler } from './utils/autoReview';
 import { DashboardProvider } from './utils/dashboardProvider';
 import { requiresOllama } from './utils/multiAI';
@@ -123,8 +123,10 @@ async function checkSetup(context: vscode.ExtensionContext) {
   }
 
   if (!isModelInstalled(model, models)) {
+    const suggested = models.find((candidate) => isVisionModel(candidate)) ?? models[0];
+    const suggestion = suggested ? ` Sugestão: "${suggested}".` : '';
     const action = await vscode.window.showWarningMessage(
-      `Local AI: o modelo "${model}" não está instalado. Rode "ollama pull ${model}" ou escolha um dos modelos instalados.`,
+      `Local AI: o modelo "${model}" não está instalado. Rode "ollama pull ${model}" ou escolha um dos modelos instalados.${suggestion}`,
       'Escolher modelo'
     );
     if (action === 'Escolher modelo') {

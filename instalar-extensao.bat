@@ -133,12 +133,19 @@ if /i "!BAIXAR!"=="S" (
     echo.
 )
 
+echo.
+echo   Se quiser suporte a imagem, considere tambem:
+    echo   - ollama pull llava:latest
+    echo   - ollama pull qwen2.5vl:7b
+
 goto :resumo
 
 :listar_modelos
 echo        Modelos disponiveis:
 powershell -NoProfile -Command "(Invoke-RestMethod -Uri 'http://localhost:11434/api/tags' -TimeoutSec 5).models | ForEach-Object { '          - ' + $_.name }" 2>nul
 echo.
+
+powershell -NoProfile -Command "$models=(Invoke-RestMethod -Uri 'http://localhost:11434/api/tags' -TimeoutSec 5).models | ForEach-Object { $_.name }; if ($models -match 'llava|qwen2.5vl|gemma3|phi3.5-vision') { '  Modelo de imagem detectado. Suporte visual disponivel.' } else { '  Sem modelo de imagem detectado. Para anexar imagens, instale llava:latest ou qwen2.5vl:7b.' }" 2>nul
 
 :resumo
 echo.

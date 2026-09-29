@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 export interface OllamaMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  /** Imagens em base64, conforme o formato /api/chat do Ollama. */
+  images?: string[];
 }
 
 export interface OllamaChatResponse {
@@ -84,6 +86,14 @@ export async function listModels(): Promise<string[]> {
 export function isModelInstalled(model: string, installed: string[]): boolean {
   const wanted = model.includes(':') ? model : `${model}:latest`;
   return installed.some((m) => m === model || m === wanted);
+}
+
+/**
+ * Indica se o modelo suporta entrada visual (imagens), como LLaVA e Qwen VL.
+ */
+export function isVisionModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return /(llava|bakllava|moondream|minicpm-v|qwen.*vl|vision|gemma3|llama3\.2.*vision|phi[-_.]?3(?:\.5)?[-_.]?vision)/.test(normalized);
 }
 
 /**

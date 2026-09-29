@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trimHistory, stripCodeFences, isModelInstalled } from './ollama';
+import { trimHistory, stripCodeFences, isModelInstalled, isVisionModel } from './ollama';
 import type { OllamaMessage } from './ollama';
 
 describe('Ollama Utils', () => {
@@ -75,6 +75,14 @@ describe('Ollama Utils', () => {
       const installed = ['qwen2.5-coder:7b'];
 
       expect(isModelInstalled('nonexistent:latest', installed)).toBe(false);
+    });
+  });
+
+  describe('isVisionModel', () => {
+    it('reconhece modelos de visão e rejeita modelos de texto puro', () => {
+      expect(isVisionModel('llava:latest')).toBe(true);
+      expect(isVisionModel('qwen2.5vl:7b')).toBe(true);
+      expect(isVisionModel('qwen2.5-coder:7b')).toBe(false);
     });
   });
 });

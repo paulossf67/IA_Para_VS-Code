@@ -4,6 +4,7 @@ import {
   chatStream,
   checkOllamaAvailable,
   getConfig,
+  isVisionModel,
   trimHistory,
   OllamaMessage,
   SYSTEM_PROMPT,
@@ -18,6 +19,14 @@ type WebviewMessage = { type: string; [key: string]: unknown };
 interface QueuedPrompt {
   text: string;
   resolve?: (response: string | undefined) => void;
+  images?: string[];
+}
+
+interface ChatAttachment {
+  name: string;
+  kind: 'text' | 'image';
+  content?: string;
+  base64?: string;
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -36,6 +45,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   /** Fila de prompts: comandos disparados durante uma resposta esperam a vez */
   private promptQueue: QueuedPrompt[] = [];
   private isGenerating = false;
+  private pendingAttachments: ChatAttachment[] = [];
 
   /** Último editor de texto usado (o foco na webview não conta) */
   private lastEditor?: vscode.TextEditor;
@@ -164,11 +174,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
           this.onWebviewReady();
           break;
         case 'sendMessage':
-          this.enqueue(String(data.text ?? ''));
+          this.enqueue(String(data.text ?? ''), undefined, this.pendingAttachments.splice(0));
+          break;
+        case 'attachFiles':
+          await this.attachFiles();
           break;
         case 'clearChat':
           this.cancelQueuedPrompts();
           this.abortController?.abort();
+          this.pendingAttachments = [];
           this.messages = [{ role: 'system', content: SYSTEM_PROMPT }];
           this.post({ type: 'cleared' });
           break;
@@ -238,9 +252,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
   }
 
-  private enqueue(text: string, resolve?: (response: string | undefined) => void) {
+  private enqueue(
+    text: string,
+    resolve?: (response: string | undefined) => void,
+    attachments: ChatAttachment[] = []
+  ) {
     if (!text.trim()) return;
-    this.promptQueue.push({ text, resolve });
+    const attachmentText = attachments
+      .filter((attachment) => attachment.kind === 'text')
+      .map((attachment) => `\n\n--- Documento anexado: ${attachment.name} ---\n${attachment.content}`)
+      .join('');
+    const images = attachments
+      .filter((attachment) => attachment.kind === 'image' && attachment.base64)
+      .map((attachment) => attachment.base64!);
+
+    this.promptQueue.push({
+      text: text + attachmentText,
+      resolve,
+      images: images.length > 0 ? images : undefined,
+    });
     void this.processQueue();
   }
 
@@ -255,7 +285,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       while (this.promptQueue.length > 0) {
         const queued = this.promptQueue.shift()!;
         try {
-          queued.resolve?.(await this.handleUserMessage(queued.text));
+          const response = await this.handleUserMessage(queued.text, queued.images);
+          queued.resolve?.(response);
         } catch (error) {
           queued.resolve?.(undefined);
           const message = error instanceof Error ? error.message : String(error);
@@ -267,15 +298,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
   }
 
-  private async handleUserMessage(text: string) {
+  private async handleUserMessage(text: string, images: string[] = []) {
+    const aiConfig = getAIConfig(this.storage);
+    const { model } = getConfig();
+
+    if (images.length > 0 && aiConfig && aiConfig.provider !== 'ollama') {
+      throw new Error('Anexos de imagem estão disponíveis atualmente apenas com Ollama e um modelo com visão.');
+    }
+
+    if (images.length > 0 && requiresOllama(this.storage) && !isVisionModel(model)) {
+      throw new Error(
+        `Anexos de imagem exigem um modelo com visão no Ollama. O modelo atual "${model}" não suporta imagens. Instale e selecione algo como "llava:latest" ou "qwen2.5vl:7b".`
+      );
+    }
+
     if (requiresOllama(this.storage) && !(await checkOllamaAvailable())) {
-      this.promptQueue = [];
+      this.cancelQueuedPrompts();
       this.post({
         type: 'error',
         message:
           'Ollama não está rodando!\n\n1. Instale: https://ollama.com\n2. Rode no terminal: ollama serve\n3. Baixe um modelo: ollama pull qwen2.5-coder:7b',
       });
-      return;
       return;
     }
 
@@ -310,8 +353,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       }
     }
 
-    this.messages.push({ role: 'user', content: enrichedText });
-    this.post({ type: 'userMessage', text });
+    this.messages.push({
+      role: 'user',
+      content: enrichedText,
+      ...(images.length > 0 ? { images } : {}),
+    });
+    this.post({ type: 'userMessage', text, attachments: images.length });
     this.post({ type: 'startAssistant' });
 
     const abortController = new AbortController();
@@ -323,7 +370,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       const { maxHistoryMessages } = getConfig();
       this.messages = trimHistory(this.messages, maxHistoryMessages);
 
-      await retryWithBackoff(
+      const response = await retryWithBackoff(
         () =>
           this.runChat(
             (chunk) => {
@@ -336,6 +383,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         3,
         1000
       );
+
+      if (!fullResponse) {
+        fullResponse = response;
+        this.streamingText = fullResponse;
+        if (fullResponse) this.post({ type: 'chunk', text: fullResponse });
+      }
 
       this.messages.push({ role: 'assistant', content: fullResponse });
       this.saveHistoryToStorage();
@@ -359,6 +412,46 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.abortController = undefined;
       this.streamingText = undefined;
     }
+  }
+
+  private async attachFiles(): Promise<void> {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      openLabel: 'Anexar ao chat',
+      filters: {
+        'Imagens': ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+        'Textos e logs': ['txt', 'text', 'log', 'md', 'mdx', 'json', 'csv', 'xml', 'html', 'css', 'ts', 'js', 'py', 'java', 'cs', 'go', 'rs', 'sql'],
+      },
+    });
+
+    if (!uris || uris.length === 0) return;
+
+    const accepted: ChatAttachment[] = [];
+    for (const uri of uris) {
+      const extension = path.extname(uri.fsPath).toLowerCase();
+      const name = path.basename(uri.fsPath);
+      try {
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(extension)) {
+          accepted.push({ name, kind: 'image', base64: Buffer.from(bytes).toString('base64') });
+        } else {
+          const content = Buffer.from(bytes).toString('utf-8');
+          if (content.includes('\0')) {
+            vscode.window.showWarningMessage(`Local AI: o arquivo "${name}" não é um documento de texto.`);
+            continue;
+          }
+          accepted.push({ name, kind: 'text', content });
+        }
+      } catch {
+        vscode.window.showWarningMessage(`Local AI: não foi possível ler "${name}".`);
+      }
+    }
+
+    this.pendingAttachments.push(...accepted);
+    this.post({
+      type: 'attachments',
+      files: accepted.map((attachment) => ({ name: attachment.name, kind: attachment.kind })),
+    });
   }
 
   /** Insere o código no editor (substitui a seleção, se houver) */
@@ -479,17 +572,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button id="modelBtn" title="Trocar modelo">🤖 …</button>
   </div>
 
-  <div id="messages"></div>
+  <div id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
 
   <div id="input-area">
-    <textarea id="input" placeholder="Pergunte qualquer coisa sobre código... (Shift+Enter = nova linha)" rows="1"></textarea>
-    <button id="sendBtn">Enviar</button>
+    <button id="attachBtn" title="Anexar documentos ou imagens" aria-label="Anexar documentos ou imagens">📎</button>
+    <textarea id="input" aria-label="Mensagem para o assistente" placeholder="Pergunte qualquer coisa sobre código... (Shift+Enter = nova linha)" rows="1"></textarea>
+    <button id="sendBtn" disabled>Enviar</button>
   </div>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const messagesEl = document.getElementById('messages');
     const input = document.getElementById('input');
+    const attachBtn = document.getElementById('attachBtn');
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -501,6 +596,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     let currentAssistantText = '';
     let renderPending = false;
     let isGenerating = false;
+    let attachmentCount = 0;
 
     // ---------- Markdown simples e seguro (tudo é escapado antes) ----------
     function escapeHtml(s) {
@@ -590,8 +686,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
     function setGenerating(state) {
       isGenerating = state;
-      sendBtn.disabled = state;
+      updateSendButton();
       stopBtn.style.display = state ? 'inline-block' : 'none';
+    }
+
+    function updateSendButton() {
+      sendBtn.disabled = isGenerating || (!input.value.trim() && attachmentCount === 0);
     }
 
     function autoResize() {
@@ -600,7 +700,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
 
     sendBtn.addEventListener('click', send);
-    input.addEventListener('input', autoResize);
+    input.addEventListener('input', () => {
+      autoResize();
+      updateSendButton();
+    });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -611,6 +714,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     clearBtn.addEventListener('click', () => vscode.postMessage({ type: 'clearChat' }));
     stopBtn.addEventListener('click', () => vscode.postMessage({ type: 'stopGeneration' }));
     modelBtn.addEventListener('click', () => vscode.postMessage({ type: 'selectModel' }));
+    attachBtn.addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
 
     // Botões Copiar / Inserir dos blocos de código
     messagesEl.addEventListener('click', (e) => {
@@ -630,10 +734,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
     function send() {
       const text = input.value.trim();
-      if (!text || isGenerating) return;
+      if ((!text && attachmentCount === 0) || isGenerating) return;
       input.value = '';
       autoResize();
-      vscode.postMessage({ type: 'sendMessage', text });
+      vscode.postMessage({ type: 'sendMessage', text: text || 'Analise os anexos enviados.' });
+      attachmentCount = 0;
+      attachBtn.textContent = '📎';
+      updateSendButton();
     }
 
     function setModel(name) {
@@ -659,6 +766,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
         case 'userMessage':
           appendMessage(data.text, 'user', true);
+          break;
+
+        case 'attachments':
+          attachmentCount += (data.files || []).length;
+          attachBtn.textContent = '📎 ' + attachmentCount;
+          updateSendButton();
           break;
 
         case 'contextInfo': {
@@ -719,6 +832,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     });
 
     showWelcome();
+    updateSendButton();
     vscode.postMessage({ type: 'ready' });
   </script>
 </body>

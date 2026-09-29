@@ -35,6 +35,7 @@ export const window = {
   showErrorMessage: async () => undefined,
   showQuickPick: async () => undefined,
   showInputBox: async () => undefined,
+  showOpenDialog: async () => undefined,
   createWebviewPanel: () => ({ webview: { html: '' } }),
   withProgress: async <T>(_opts: unknown, task: (...a: never[]) => Promise<T>) =>
     task(...([{ report() {} }, { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) }] as never[])),
