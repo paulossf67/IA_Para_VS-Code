@@ -48,7 +48,7 @@ For local chat, autocomplete, auto-review, and embeddings:
 **From VSIX**:
 ```bash
 # Download .vsix from Releases, then:
-code --install-extension local-ai-vscode-0.4.0.vsix
+code --install-extension local-ai-vscode-0.4.2.vsix
 ```
 
 **Guided installer** — locates the `.vsix`, finds VS Code even when `code`

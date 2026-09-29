@@ -2,7 +2,7 @@
   "name": "local-ai-vscode",
   "displayName": "Local AI Assistant",
   "description": "Assistente de IA 100% local para VS Code (Ollama). Chat, autocomplete e comandos de código.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "paulosergio",
   "license": "MIT",
   "repository": {
