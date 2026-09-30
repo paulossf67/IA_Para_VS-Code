@@ -7,8 +7,12 @@ import { analyzeCodeOnSave, CodeReviewActionProvider, disposeDiagnostics, Docume
 import { DashboardProvider } from './utils/dashboardProvider';
 import { requiresOllama } from './utils/multiAI';
 import { CodePreviewProvider, codePreviewProvider } from './utils/codePreview';
+import { ModelManagerProvider } from './utils/modelManagerUI';
+import { UsageStatsProvider, UsageStatsTracker, createUsageStatsCommands } from './utils/usageStats';
+import { SlashCommandProvider, createSlashCommandCommands, SlashCommandManager } from './utils/slashCommands';
+import { OfflineQueueProvider } from './utils/offlineQueue';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Assistant ativado!');
 
   // ✅ FEATURE 1: Chat Provider
@@ -17,13 +21,11 @@ export function activate(context: vscode.ExtensionContext) {
     context.globalState,
     context.secrets
   );
-  (globalThis as any).__localAIChatProvider = chatProvider;
   context.subscriptions.push(
     chatProvider,
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider, {
       webviewOptions: { retainContextWhenHidden: true },
-    }),
-    { dispose: () => { delete (globalThis as any).__localAIChatProvider; } }
+    })
   );
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(CodePreviewProvider.scheme, codePreviewProvider),
@@ -37,6 +39,51 @@ export function activate(context: vscode.ExtensionContext) {
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
+
+  // ✅ FEATURE: Model Manager
+  const modelManagerProvider = new ModelManagerProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ModelManagerProvider.viewType, modelManagerProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  // ✅ FEATURE: Usage Stats
+  const usageStatsTracker = new UsageStatsTracker(context.globalState);
+  await usageStatsTracker.initialize();
+  const usageStatsProvider = new UsageStatsProvider(context.extensionUri, context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(UsageStatsProvider.viewType, usageStatsProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  // Register usage stats commands
+  createUsageStatsCommands(context, usageStatsTracker);
+
+// ✅ FEATURE: Slash Commands
+  const slashCommandProvider = new SlashCommandProvider(context.extensionUri, context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SlashCommandProvider.viewType, slashCommandProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  // Register slash commands
+  const slashManager = new (await import('./utils/slashCommands')).SlashCommandManager(context.globalState);
+  createSlashCommandCommands(context, slashManager);
+
+  // ✅ FEATURE: Offline Queue
+  const offlineQueueProvider = new OfflineQueueProvider(context.extensionUri, context.globalState);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(OfflineQueueProvider.viewType, offlineQueueProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  // Register offline queue commands
+  const offlineQueueManager = new (await import('./utils/offlineQueue')).OfflineQueueManager(context.globalState);
+  createOfflineQueueCommands(context, offlineQueueManager);
 
   // ✅ FEATURES 3-8: Commands (Explain, Refactor, Tests, Git, etc)
   registerCommands(context, chatProvider, context.globalState);

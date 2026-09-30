@@ -23,7 +23,6 @@ import { CodeGenetics } from '../utils/codeGenetics';
 import { getValidationScripts, runNpmScript } from '../utils/projectValidation';
 import { codePreviewProvider } from '../utils/codePreview';
 import { GeneratedFile, parseGeneratedFiles } from '../utils/generatedFiles';
-import { exportSettings, importSettings, backupSettings, restoreSettingsBackup } from '../utils/settingsManager';
 
 export function getSelectedCode(): { code: string; language: string } | null {
   const editor = vscode.window.activeTextEditor;
@@ -723,31 +722,6 @@ ${prefix}
     })
   );
 
-  // ⚙️ SETTINGS MANAGER: Export/Import/Backup
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.exportSettings', async () => {
-      await exportSettings(context);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.importSettings', async () => {
-      await importSettings(context);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.backupSettings', async () => {
-      await backupSettings(context);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('local-ai.restoreSettingsBackup', async () => {
-      await restoreSettingsBackup(context);
-    })
-  );
-
   // Selecionar arquivos para context (novo: usa AdvancedContextManager)
   if (storage) {
     context.subscriptions.push(
@@ -852,28 +826,11 @@ ${prefix}
       })
     );
 
-    // 🔍 SEMANTIC SEARCH: Limpar cache de embeddings
-    context.subscriptions.push(
-      vscode.commands.registerCommand('local-ai.clearEmbeddingCache', async () => {
-        const searcher = new SemanticSearcher(context.globalState, context);
-        await searcher.initialize();
-        await searcher.clearEmbeddingCache();
-        vscode.window.showInformationMessage('Cache de embeddings limpo');
-      })
-    );
-
     // 🧬 CODE GENETICS: Evolução do código
     context.subscriptions.push(
       vscode.commands.registerCommand('local-ai.codeGenetics', async () => {
         const genetics = new CodeGenetics(context);
         await genetics.showEvolutionUI();
-      })
-    );
-
-    // 🤖 MODEL MANAGER: Abrir gerenciador de modelos
-    context.subscriptions.push(
-      vscode.commands.registerCommand('local-ai.openModelManager', async () => {
-        await vscode.commands.executeCommand('local-ai.modelManager.focus');
       })
     );
   }

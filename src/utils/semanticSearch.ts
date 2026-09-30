@@ -30,6 +30,15 @@ const SIMILARITY_THRESHOLD = 0.3;
 const MAX_RESULTS = 10;
 const CHUNK_SIZE = 500;
 const CHUNK_OVERLAP = 50;
+const EMBEDDING_CACHE_KEY = 'local-ai.embeddingCache';
+const MAX_CACHE_SIZE = 10000;
+
+interface EmbeddingCacheEntry {
+  model: string;
+  hash: string;
+  embedding: number[];
+  timestamp: number;
+}
 
 export class SemanticSearcher {
   private index: SearchableItem[] = [];
@@ -45,7 +54,71 @@ export class SemanticSearcher {
     };
   }
 
-  constructor(private storage: vscode.Memento, private context: vscode.ExtensionContext) {}
+  constructor(
+    private storage: vscode.Memento, 
+    private context: vscode.ExtensionContext
+  ) {}
+
+  /** Cache key: model:hash */
+  private cacheKey(model: string, text: string): string {
+    const hash = this.simpleHash(text);
+    return `${model}:${hash}`;
+  }
+
+  private simpleHash(text: string): string {
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  /** Load embedding cache from persistent storage */
+  private async loadEmbeddingCache(): Promise<void> {
+    const cached = this.storage.get<EmbeddingCacheEntry[]>(EMBEDDING_CACHE_KEY, []);
+    for (const entry of cached) {
+      if (entry.embedding?.length) {
+        this.cache.set(`${entry.model}:${entry.hash}`, entry.embedding);
+      }
+    }
+  }
+
+  /** Save embedding cache to persistent storage with size limit */
+  private async saveEmbeddingCache(): Promise<void> {
+    if (this.cache.size === 0) {
+      await this.storage.update(EMBEDDING_CACHE_KEY, []);
+      return;
+    }
+
+    const entries: EmbeddingCacheEntry[] = [];
+    let count = 0;
+    for (const [key, embedding] of this.cache.entries()) {
+      if (count >= MAX_CACHE_SIZE) break;
+      const [model, hash] = key.split(':');
+      entries.push({ model, hash, embedding, timestamp: Date.now() });
+      count++;
+    }
+    await this.storage.update(EMBEDDING_CACHE_KEY, entries);
+  }
+
+  /** Get embedding with persistent cache */
+  private async getEmbeddingCached(text: string, model: string): Promise<number[]> {
+    const key = this.cacheKey(model, text);
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+
+    const embedding = await generateEmbedding(text, { model });
+    if (embedding?.length) {
+      this.cache.set(key, embedding);
+      // Save periodically (every 10 new embeddings)
+      if (this.cache.size % 10 === 0) {
+        void this.saveEmbeddingCache();
+      }
+    }
+    return embedding;
+  }
 
   async initialize(): Promise<void> {
     const saved = this.storage.get<SearchableItem[]>('semanticIndex', []);
@@ -59,10 +132,16 @@ export class SemanticSearcher {
           }
         : undefined,
     }));
+
+    // Load persistent embedding cache
+    await this.loadEmbeddingCache();
   }
 
   async persist(): Promise<void> {
     await this.storage.update('semanticIndex', this.index);
+    if (this.cache.size > 0) {
+      await this.saveEmbeddingCache();
+    }
   }
 
   async indexChatHistory(messages: { role: 'user' | 'assistant'; content: string }[]): Promise<number> {
@@ -172,6 +251,12 @@ export class SemanticSearcher {
     this.abortController?.abort();
   }
 
+  dispose(): void {
+    this.cancelIndexing();
+    this.index = [];
+    this.cache.clear();
+  }
+
   getIndexingStatus(): boolean {
     return this.isIndexing;
   }
@@ -187,6 +272,12 @@ export class SemanticSearcher {
   async clearIndex(): Promise<void> {
     this.index = [];
     await this.persist();
+  }
+
+  /** Clear embedding cache */
+  async clearEmbeddingCache(): Promise<void> {
+    this.cache.clear();
+    await this.storage.update(EMBEDDING_CACHE_KEY, []);
   }
 
   async search(query: string, topK = MAX_RESULTS): Promise<SearchResult[]> {
@@ -218,17 +309,7 @@ export class SemanticSearcher {
   }
 
   private async getEmbedding(text: string, model: string): Promise<number[]> {
-    const cacheKey = `${model}:${text}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const embedding = await generateEmbedding(text, { model });
-      this.cache.set(cacheKey, embedding);
-      return embedding;
-    } catch {
-      return [];
-    }
+    return this.getEmbeddingCached(text, model);
   }
 
   cosineSimilarity(a: number[], b: number[]): number {

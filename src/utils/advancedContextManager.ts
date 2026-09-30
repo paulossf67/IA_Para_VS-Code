@@ -126,10 +126,22 @@ export class AdvancedContextManager {
       return null;
     }
 
-    const allFiles = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, 200);
+    // Search across ALL workspace folders for multi-root support
+    const foldersToSearch = vscode.workspace.workspaceFolders!;
+    let allFiles: vscode.Uri[] = [];
+
+    for (const folder of foldersToSearch) {
+      const files = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, 200);
+      allFiles.push(...files);
+    }
     
+    if (allFiles.length === 0) {
+      vscode.window.showInformationMessage('Nenhum arquivo encontrado');
+      return null;
+    }
+
     const quickPicks = allFiles.map(file => ({
-      label: vscode.workspace.asRelativePath(file),
+      label: vscode.workspace.asRelativePath(file, false),
       detail: file.fsPath,
       picked: false,
       uri: file,
@@ -199,42 +211,67 @@ export class AdvancedContextManager {
 
     const group = selectedGroup;
     const explicitFiles = new Set(group.files.map(normalizePath));
-    const candidateUris = new Map<string, vscode.Uri>();
+    const candidateUris = new Map<string, { uri: vscode.Uri; folder: vscode.WorkspaceFolder }>();
 
+    // Collect files from ALL workspace folders
+    const foldersToSearch = vscode.workspace.workspaceFolders!;
+
+    // 1. Explicit files
     if (explicitFiles.size > 0) {
-      const workspaceUris = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, MAX_FILES_SCANNED);
-      for (const uri of workspaceUris) {
-        const rel = normalizePath(vscode.workspace.asRelativePath(uri));
-        if (explicitFiles.has(rel)) candidateUris.set(rel, uri);
+      for (const folder of foldersToSearch) {
+        const workspaceUris = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, MAX_FILES_SCANNED);
+        for (const uri of workspaceUris) {
+          const rel = normalizePath(vscode.workspace.asRelativePath(uri, false));
+          if (explicitFiles.has(rel)) candidateUris.set(rel, { uri, folder });
+        }
       }
     }
 
+    // 2. Include patterns
     for (const pattern of group.includePatterns) {
       if (!pattern.trim()) continue;
-      const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
-      for (const uri of uris) {
-        const rel = normalizePath(vscode.workspace.asRelativePath(uri));
-        candidateUris.set(rel, uri);
+      for (const folder of foldersToSearch) {
+        const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
+        for (const uri of uris) {
+          const rel = normalizePath(vscode.workspace.asRelativePath(uri, false));
+          const folder = vscode.workspace.getWorkspaceFolder?.(uri) ?? foldersToSearch[0];
+          if (!candidateUris.has(rel)) candidateUris.set(rel, { uri, folder });
+        }
       }
     }
 
+    // 3. Exclude patterns
     for (const pattern of group.excludePatterns) {
       if (!pattern.trim()) continue;
-      const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
-      for (const uri of uris) {
-        candidateUris.delete(normalizePath(vscode.workspace.asRelativePath(uri)));
+      for (const folder of foldersToSearch) {
+        const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_FILES_SCANNED);
+        for (const uri of uris) {
+          candidateUris.delete(normalizePath(vscode.workspace.asRelativePath(uri, false)));
+        }
       }
     }
 
     const candidates = [...candidateUris.entries()]
-      .map(([rel, uri]) => ({ uri, rel }))
+      .map(([rel, { uri, folder }]) => ({ uri, rel, folder }))
       .filter((file) => isTextCandidate(file.rel) || explicitFiles.has(file.rel));
 
     if (candidates.length === 0) return '';
 
+    // Sort: explicit files first, then by group priority
+    candidates.sort((a, b) => {
+      const aExplicit = explicitFiles.has(a.rel);
+      const bExplicit = explicitFiles.has(b.rel);
+      if (aExplicit && !bExplicit) return -1;
+      if (!aExplicit && bExplicit) return 1;
+      return 0;
+    });
+
     context += `### ${group.name} (Prioridade: ${group.priority}/10)\n`;
     if (group.tags.length > 0) {
       context += `**Tags:** ${group.tags.join(', ')}\n`;
+    }
+    if (vscode.workspace.workspaceFolders!.length > 1) {
+      context += `**Workspaces:** ${vscode.workspace.workspaceFolders!.map(f => f.name).join(', ')}\n`;
     }
     context += '\n';
 

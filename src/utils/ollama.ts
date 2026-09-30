@@ -124,6 +124,9 @@ async function throwHttpError(response: Response): Promise<never> {
     const { model } = getConfig();
     throw new Error(`Modelo "${model}" não encontrado no Ollama. Rode: ollama pull ${model}`);
   }
+  if (response.status === 429) {
+    throw new Error('Ollama rate limit (429): muitas requisições. Aguarde alguns segundos e tente novamente.');
+  }
   throw new Error(`Ollama error ${response.status}: ${detail}`);
 }
 
@@ -309,6 +312,68 @@ export async function generateFim(
 }
 
 /**
+ * Fill-in-the-middle com STREAMING (para autocomplete em tempo real)
+ * Retorna chunks conforme o modelo gera.
+ */
+export async function generateFimStream(
+  prefix: string,
+  suffix: string,
+  onChunk: (text: string) => void,
+  options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
+): Promise<string> {
+  const config = getConfig();
+
+  const body = {
+    model: config.model,
+    prompt: prefix,
+    suffix,
+    stream: true,
+    options: {
+      temperature: options?.temperature ?? 0.1,
+      num_predict: options?.maxTokens ?? 128,
+      num_ctx: config.numCtx,
+      stop: ['\n\n\n'],
+    },
+  };
+
+  const response = await fetch(`${config.url}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    if (/does not support insert|suffix/i.test(text)) {
+      throw new FimNotSupportedError(text);
+    }
+    throw new Error(`Ollama error ${response.status}: ${text}`);
+  }
+
+  if (!response.body) {
+    throw new Error('Resposta sem body');
+  }
+
+  let fullContent = '';
+  let streamError: string | undefined;
+
+  await readNdjson<OllamaGenerateResponse>(response.body, (parsed) => {
+    if (parsed.error) {
+      streamError = parsed.error;
+      return;
+    }
+    if (parsed.response) {
+      fullContent += parsed.response;
+      onChunk(parsed.response);
+    }
+  });
+
+  if (streamError) throw new Error(streamError);
+  return fullContent;
+}
+
+/**
  * Remove cercas de markdown (```lang ... ```) que o modelo às vezes coloca,
  * sem mexer na indentação do código.
  */
@@ -362,6 +427,76 @@ export async function generateEmbeddingsBatch(
     results.push(await generateEmbedding(text, options));
   }
   return results;
+}
+
+/**
+ * Baixa um modelo no Ollama (streaming progress)
+ */
+export async function pullModel(
+  model: string,
+  onProgress?: (status: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const config = getConfig();
+
+  const response = await fetch(`${config.url}/api/pull`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: model, stream: true }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Erro ao baixar modelo: ${response.status} ${text}`);
+  }
+
+  if (!response.body) {
+    throw new Error('Resposta sem body');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.status && onProgress) {
+          onProgress(data.status);
+        }
+        if (data.error) {
+          throw new Error(data.error);
+        }
+      } catch {}
+    }
+  }
+}
+
+/**
+ * Remove um modelo do Ollama
+ */
+export async function deleteModel(model: string, signal?: AbortSignal): Promise<void> {
+  const config = getConfig();
+
+  const response = await fetch(`${config.url}/api/delete`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: model }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Erro ao remover modelo: ${response.status} ${text}`);
+  }
 }
 
 /**

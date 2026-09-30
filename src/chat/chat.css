@@ -177,6 +177,34 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 #toolbar button { padding: 4px 10px; font-size: 12px; }
 
+#modelBtn:hover { background: var(--button2-hover); }
+
+.connection-status {
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  transition: all 0.2s ease;
+}
+
+.connection-status.connecting {
+  color: var(--vscode-charts-yellow, #cca700);
+  animation: spin 1s linear infinite;
+}
+
+.connection-status.connected {
+  color: var(--vscode-charts-green, #388a34);
+}
+
+.connection-status.error {
+  color: var(--vscode-charts-red, #f14c4c);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 #modelBtn {
   margin-left: auto;
   background: var(--button2-bg);

@@ -498,4 +498,9 @@ export class DashboardProvider implements vscode.WebviewViewProvider {
 </html>
     `;
   }
+
+  dispose(): void {
+    this._view = undefined;
+    this.data = null;
+  }
 }

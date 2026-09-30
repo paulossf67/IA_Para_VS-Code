@@ -149,6 +149,71 @@
         "command": "local-ai.codeGenetics",
         "title": "Local AI: Evolução do Código (Genetics)",
         "icon": "$(history)"
+      },
+      {
+        "command": "local-ai.exportSettings",
+        "title": "Local AI: Exportar Configurações",
+        "icon": "$(export)"
+      },
+      {
+        "command": "local-ai.importSettings",
+        "title": "Local AI: Importar Configurações",
+        "icon": "$(import)"
+      },
+      {
+        "command": "local-ai.backupSettings",
+        "title": "Local AI: Backup de Configurações",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "local-ai.restoreSettingsBackup",
+        "title": "Local AI: Restaurar Backup de Configurações",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "local-ai.clearEmbeddingCache",
+        "title": "Local AI: Limpar Cache de Embeddings",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "local-ai.openModelManager",
+        "title": "Local AI: Gerenciar Modelos",
+        "icon": "$(package)"
+      },
+      {
+        "command": "local-ai.showUsageStats",
+        "title": "Local AI: Ver Estatísticas de Uso",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "local-ai.clearUsageStats",
+        "title": "Local AI: Limpar Estatísticas de Uso",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "local-ai.exportUsageStats",
+        "title": "Local AI: Exportar Estatísticas de Uso",
+        "icon": "$(export)"
+      },
+      {
+        "command": "local-ai.slashCommands",
+        "title": "Local AI: Gerenciar Slash Commands",
+        "icon": "$(symbol-key)"
+      },
+      {
+        "command": "local-ai.showOfflineQueue",
+        "title": "Local AI: Ver Fila Offline",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "local-ai.retryOfflineQueue",
+        "title": "Local AI: Retentar Fila Offline",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "local-ai.clearOfflineQueue",
+        "title": "Local AI: Limpar Fila Offline",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -246,6 +311,45 @@
         },
         {
           "command": "local-ai.codeGenetics"
+        },
+        {
+          "command": "local-ai.exportSettings"
+        },
+        {
+          "command": "local-ai.importSettings"
+        },
+        {
+          "command": "local-ai.backupSettings"
+        },
+        {
+          "command": "local-ai.restoreSettingsBackup"
+        },
+{
+          "command": "local-ai.exportUsageStats"
+        },
+        {
+          "command": "local-ai.openModelManager"
+        },
+        {
+          "command": "local-ai.showUsageStats"
+        },
+        {
+          "command": "local-ai.clearUsageStats"
+        },
+        {
+          "command": "local-ai.exportUsageStats"
+        },
+        {
+          "command": "local-ai.slashCommands"
+        },
+        {
+          "command": "local-ai.showOfflineQueue"
+        },
+        {
+          "command": "local-ai.retryOfflineQueue"
+        },
+        {
+          "command": "local-ai.clearOfflineQueue"
         }
       ],
       "view/title": [
@@ -373,6 +477,30 @@
           "id": "local-ai.dashboard",
           "name": "Dashboard",
           "when": "local-ai.dashboardEnabled"
+        },
+        {
+          "type": "webview",
+          "id": "local-ai.modelManager",
+          "name": "Modelos",
+          "icon": "$(package)"
+        },
+        {
+          "type": "webview",
+          "id": "local-ai.usageStats",
+          "name": "Usage Stats",
+          "icon": "$(graph)"
+        },
+        {
+          "type": "webview",
+          "id": "local-ai.slashCommands",
+          "name": "Slash Commands",
+          "icon": "$(symbol-key)"
+        },
+        {
+          "type": "webview",
+          "id": "local-ai.offlineQueue",
+          "name": "Offline Queue",
+          "icon": "$(sync)"
         }
       ]
     }

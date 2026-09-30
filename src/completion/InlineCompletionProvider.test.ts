@@ -70,7 +70,9 @@ describe('LocalAIInlineCompletionProvider', () => {
 
     vi.doMock('../utils/ollama', () => ({
       generateFim: generateFimMock,
+      generateFimStream: vi.fn().mockResolvedValue('    return x + y;\n'),
       chat: chatMock,
+      chatStream: vi.fn().mockResolvedValue('    return x + y;\n'),
       getConfig: getConfigMock,
       stripCodeFences: stripCodeFencesMock,
       FimNotSupportedError,

@@ -18,6 +18,10 @@ export const workspace = {
       key in __configOverrides ? (__configOverrides[key] as T) : defaultValue,
     update: async () => undefined,
   }),
+  getWorkspaceFolder: (uri: { fsPath?: string }) => {
+    const root = (workspace.workspaceFolders as { uri?: { fsPath?: string } }[] | undefined)?.[0];
+    return root && uri?.fsPath?.startsWith(root.uri?.fsPath ?? '') ? root : undefined;
+  },
   workspaceFolders: undefined as unknown[] | undefined,
   findFiles: async () => [],
   fs: { readFile: async () => new Uint8Array() },

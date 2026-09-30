@@ -19,6 +19,8 @@ import { retryWithBackoff } from '../utils/retry';
 type WebviewMessage = { type: string; [key: string]: unknown };
 const MAX_DIRTY_EDITOR_CONTEXT_CHARS = 6000;
 const MAX_ACTIVE_DIAGNOSTICS = 20;
+const MAX_OUTBOX_SIZE = 100; // Previne vazamento de memória se webview nunca ficar pronta
+
 interface QueuedPrompt {
   text: string;
   resolve?: (response: string | undefined) => void;
@@ -252,6 +254,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this._view.webview.postMessage(message);
     } else {
       this.outbox.push(message);
+      if (this.outbox.length > MAX_OUTBOX_SIZE) {
+        this.outbox.shift(); // Remove a mais antiga
+      }
     }
   }
 
@@ -305,6 +310,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const aiConfig = getAIConfig(this.storage);
     const { model } = getConfig();
 
+    if (requiresOllama(this.storage)) {
+      this.post({ type: 'connectionStatus', status: 'connecting' });
+    }
+
     if (images.length > 0 && aiConfig && aiConfig.provider !== 'ollama') {
       throw new Error('Anexos de imagem estão disponíveis atualmente apenas com Ollama e um modelo com visão.');
     }
@@ -317,6 +326,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
     if (requiresOllama(this.storage) && !(await checkOllamaAvailable())) {
       this.cancelQueuedPrompts();
+      this.post({ type: 'connectionStatus', status: 'error' });
       this.post({
         type: 'error',
         message:
@@ -325,16 +335,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return;
     }
 
+    this.post({ type: 'connectionStatus', status: 'connected' });
+    this.post({ type: 'progress', stage: 'context', label: 'Preparando o contexto...' });
+
+    // Parse @group syntax: @groupname at start of message selects context group for this message
+    const groupMatch = text.match(/^@(\S+)\s/);
+    const contextGroupName = groupMatch?.[1] ?? null;
+    const userText = groupMatch ? text.slice(groupMatch[0].length) : text;
+
     this.post({ type: 'progress', stage: 'context', label: 'Preparando o contexto...' });
 
     // Injeta o conteúdo dos arquivos do projeto
-    let enrichedText = text;
+    let enrichedText = userText;
     if (vscode.workspace.workspaceFolders) {
-      // 1. Tenta usar grupo de contexto selecionado (AdvancedContextManager)
-      const groupContext = await this.contextManager.getContextString();
+      let groupContext = '';
+      
+      if (contextGroupName) {
+        // Use specific group for this message
+        const config = await this.contextManager.loadConfig();
+        const group = config.groups.find(g => g.name.toLowerCase() === contextGroupName.toLowerCase());
+        if (group) {
+          const originalSelected = await this.contextManager.getSelectedGroup();
+          await this.contextManager.selectGroup(group.id);
+          groupContext = await this.contextManager.getContextString();
+          // Restore original selection
+          await this.contextManager.selectGroup(originalSelected?.id ?? null);
+        }
+      } else {
+        // 1. Tenta usar grupo de contexto selecionado (AdvancedContextManager)
+        groupContext = await this.contextManager.getContextString();
+      }
       
       if (groupContext) {
-        enrichedText = `${text}\n\n---\n${groupContext}`;
+        enrichedText = `${userText}\n\n---\n${groupContext}`;
         this.post({
           type: 'contextInfo',
           files: 0,
@@ -617,6 +650,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button id="clearBtn" title="Limpar conversa">🗑 Limpar</button>
     <button id="stopBtn" title="Parar geração" style="display:none">⏹ Parar</button>
     <button id="modelBtn" title="Trocar modelo">🤖 …</button>
+    <span id="connectionStatus" class="connection-status" title="Status da conexão" style="display:none">⟳</span>
   </div>
 
   <div id="progress" role="status" aria-live="polite" aria-hidden="true">
@@ -813,6 +847,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       modelBtn.title = 'Modelo atual: ' + name + ' (clique para trocar)';
     }
 
+    function setConnectionStatus(status: 'connecting' | 'connected' | 'error' | 'hidden') {
+      const el = document.getElementById('connectionStatus');
+      if (!el) return;
+      switch (status) {
+        case 'connecting':
+          el.style.display = 'inline-block';
+          el.textContent = '⟳';
+          el.title = 'Conectando ao Ollama...';
+          el.className = 'connection-status connecting';
+          break;
+        case 'connected':
+          el.style.display = 'inline-block';
+          el.textContent = '●';
+          el.title = 'Conectado ao Ollama';
+          el.className = 'connection-status connected';
+          break;
+        case 'error':
+          el.style.display = 'inline-block';
+          el.textContent = '✕';
+          el.title = 'Erro de conexão com Ollama';
+          el.className = 'connection-status error';
+          break;
+        default:
+          el.style.display = 'none';
+      }
+    }
+
     window.addEventListener('message', (event) => {
       const data = event.data;
 
@@ -823,6 +884,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
             appendMessage(m.content, m.role === 'user' ? 'user' : 'assistant', true);
           }
           if (data.model) setModel(data.model);
+          break;
+
+        case 'connectionStatus':
+          setConnectionStatus(data.status);
           break;
 
         case 'model':

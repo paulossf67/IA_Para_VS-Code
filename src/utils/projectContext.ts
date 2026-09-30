@@ -106,38 +106,59 @@ function fence(relPath: string, content: string): string {
 }
 
 /**
+ * Obtém o workspace folder que contém o arquivo (para multi-root)
+ */
+function getWorkspaceFolderForUri(uri: vscode.Uri): vscode.WorkspaceFolder | undefined {
+  return vscode.workspace.getWorkspaceFolder(uri);
+}
+
+/**
  * Monta o contexto do projeto com o CONTEÚDO dos arquivos (não só os nomes),
- * respeitando o orçamento de tokens do modelo.
+ * respeitando o orçamento de tokens do modelo. Suporta multi-root workspaces.
  */
 export async function getProjectContext(
   selectedFiles?: SelectedFilesConfig | null,
   activeFilePath?: string
 ): Promise<ProjectContext | null> {
-  if (!vscode.workspace.workspaceFolders?.length) return null;
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders?.length) return null;
 
   const activeRel = activeFilePath ? vscode.workspace.asRelativePath(activeFilePath) : undefined;
   const selected = new Set(selectedFiles?.included ?? []);
   const budget = getCharBudget();
 
-  const cacheKey = `${budget}|${activeRel ?? ''}|${[...selected].sort().join(',')}`;
+  // Cache key inclui info de workspace folders para multi-root
+  const wsFolderPaths = workspaceFolders.map(f => f.uri.fsPath).sort().join('|');
+  const cacheKey = `${wsFolderPaths}|${budget}|${activeRel ?? ''}|${[...selected].sort().join(',')}`;
   if (cache && cache.key === cacheKey && Date.now() - cache.timestamp < CACHE_TTL_MS) {
     return cache.value;
   }
 
-  const uris = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, MAX_FILES_SCANNED);
+  // Busca arquivos em TODOS os workspace folders
+  let allCandidates: Array<{ uri: vscode.Uri; rel: string; folder: vscode.WorkspaceFolder }> = [];
 
-  let candidates = uris
-    .map((uri) => ({ uri, rel: vscode.workspace.asRelativePath(uri) }))
-    .filter((f) => isTextCandidate(f.rel));
+  for (const folder of workspaceFolders) {
+    const uris = await vscode.workspace.findFiles('**/*', EXCLUDE_GLOB, MAX_FILES_SCANNED);
+
+    const candidates = uris
+      .map((uri) => ({
+        uri,
+        rel: vscode.workspace.asRelativePath(uri, false), // relative to workspace root
+        folder,
+      }))
+      .filter((f) => isTextCandidate(f.rel));
+
+    allCandidates.push(...candidates);
+  }
 
   // Seleção manual do usuário restringe tudo, menos o arquivo aberto agora
   if (selected.size > 0) {
-    candidates = candidates.filter((f) => selected.has(f.rel) || f.rel === activeRel);
+    allCandidates = allCandidates.filter((f) => selected.has(f.rel) || f.rel === activeRel);
   }
 
-  if (candidates.length === 0) return null;
+  if (allCandidates.length === 0) return null;
 
-  candidates.sort(
+  allCandidates.sort(
     (a, b) => scoreFile(b.rel, activeRel, selected) - scoreFile(a.rel, activeRel, selected)
   );
 
@@ -145,7 +166,7 @@ export async function getProjectContext(
   const blocks: string[] = [];
   let used = 0;
 
-  for (const file of candidates) {
+  for (const file of allCandidates) {
     if (included.length >= MAX_FILES_INCLUDED || used >= budget) break;
 
     const content = await readFileText(file.uri);
@@ -167,12 +188,15 @@ export async function getProjectContext(
 
   if (included.length === 0) return null;
 
-  const notIncluded = candidates.filter((f) => !included.includes(f.rel));
+  const notIncluded = allCandidates.filter((f) => !included.includes(f.rel));
   const treeLines = notIncluded.slice(0, 40).map((f) => `- ${f.rel}`);
 
   let text = `### Contexto do Projeto\n\n`;
   if (activeRel && included.includes(activeRel)) {
     text += `Arquivo aberto no editor: \`${activeRel}\`\n\n`;
+  }
+  if (workspaceFolders.length > 1) {
+    text += `**Workspaces:** ${workspaceFolders.length} (${workspaceFolders.map(f => f.name).join(', ')})\n\n`;
   }
   text += `**Conteúdo de ${included.length} arquivo(s):**\n\n${blocks.join('\n')}`;
 
