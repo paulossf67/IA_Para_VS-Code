@@ -514,7 +514,7 @@
     "test:unit": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^26.6.4",
     "@types/vscode": "^1.85.0",
     "@vitest/coverage-v8": "^1.6.1",
     "@vitest/ui": "^1.0.0",
