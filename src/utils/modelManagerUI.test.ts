@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ModelManagerProvider } from './modelManagerUI';
 import * as vscode from 'vscode';
 
@@ -9,6 +9,11 @@ describe('ModelManagerProvider', () => {
   beforeEach(() => {
     mockUri = vscode.Uri.file('/test/extension');
     provider = new ModelManagerProvider(mockUri);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should have correct viewType', () => {

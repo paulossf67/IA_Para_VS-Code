@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QualityScoreTracker, ResponseMetrics, getQualityIndicator } from './qualityScore';
 import * as vscode from 'vscode';
 
@@ -10,6 +10,7 @@ describe('QualityScoreTracker', () => {
     get: (key: string) => mockStorage[key],
     update: async (key: string, value: unknown) => {
       mockStorage[key] = value;
+      return undefined;
     },
     keys: () => Object.keys(mockStorage),
   } as vscode.Memento;
@@ -17,6 +18,10 @@ describe('QualityScoreTracker', () => {
   beforeEach(() => {
     mockStorage = {};
     tracker = new QualityScoreTracker(mockMemento);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
   describe('recordResponse', () => {
@@ -237,9 +242,10 @@ describe('QualityScoreTracker', () => {
 
   describe('showDashboard', () => {
     it('should call vscode.window.showInformationMessage', async () => {
-      const showInfoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+      const showInfoSpy = vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined);
       await tracker.showDashboard();
       expect(showInfoSpy).toHaveBeenCalled();
+      showInfoSpy.mockRestore();
     });
   });
 

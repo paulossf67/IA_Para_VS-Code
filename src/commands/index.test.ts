@@ -1,19 +1,25 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSelectedCode, extractCodeBlock } from './index';
 import * as vscode from 'vscode';
 
 describe('commands', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
   describe('getSelectedCode', () => {
     it('should return null when no editor is open', () => {
-      vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(undefined);
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
+      const editorSpy = vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(undefined);
+      const warnSpy = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
 
       const result = getSelectedCode();
 
       expect(result).toBeNull();
-      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Nenhum editor ativo')
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Nenhum editor ativo'));
+
+      editorSpy.mockRestore();
+      warnSpy.mockRestore();
     });
 
     it('should return selected code when text is selected', () => {
@@ -29,13 +35,15 @@ describe('commands', () => {
         },
       } as any;
 
-      vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
+      const editorSpy = vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
 
       const result = getSelectedCode();
 
       expect(result).not.toBeNull();
       expect(result?.language).toBe('typescript');
       expect(mockEditor.document.getText).toHaveBeenCalledWith(mockEditor.selection);
+
+      editorSpy.mockRestore();
     });
 
     it('should return full document text when nothing is selected', () => {
@@ -49,13 +57,15 @@ describe('commands', () => {
         },
       } as any;
 
-      vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
+      const editorSpy = vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
 
       const result = getSelectedCode();
 
       expect(result?.code).toBe('const x = 1;');
       expect(result?.language).toBe('javascript');
       expect(mockEditor.document.getText).toHaveBeenCalledWith();
+
+      editorSpy.mockRestore();
     });
 
     it('should return null when code is empty or whitespace only', () => {
@@ -69,15 +79,16 @@ describe('commands', () => {
         },
       } as any;
 
-      vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
+      const editorSpy = vi.spyOn(vscode.window, 'activeTextEditor', 'get').mockReturnValue(mockEditor);
+      const warnSpy = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
 
       const result = getSelectedCode();
 
       expect(result).toBeNull();
-      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Não há código')
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Não há código'));
+
+      editorSpy.mockRestore();
+      warnSpy.mockRestore();
     });
   });
 

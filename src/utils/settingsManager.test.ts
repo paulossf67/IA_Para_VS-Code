@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SettingsManager, ExportableSettings } from './settingsManager';
 import * as vscode from 'vscode';
 
@@ -15,6 +15,7 @@ describe('SettingsManager', () => {
       get: (key: string) => mockStorage[key],
       update: async (key: string, value: unknown) => {
         mockStorage[key] = value;
+        return undefined;
       },
       keys: () => Object.keys(mockStorage),
     } as vscode.Memento;
@@ -37,6 +38,11 @@ describe('SettingsManager', () => {
       mockMemento,
       mockSecrets as vscode.SecretStorage
     );
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe('createBackup', () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSelectedFilesConfig, clearSelectedFiles, SelectedFilesConfig } from './contextStorage';
 import * as vscode from 'vscode';
 
@@ -9,11 +9,17 @@ describe('contextStorage', () => {
     get: (key: string) => mockStorage[key],
     update: async (key: string, value: unknown) => {
       mockStorage[key] = value;
+      return undefined;
     },
     keys: () => Object.keys(mockStorage),
   } as vscode.Memento;
 
   beforeEach(() => {
+    mockStorage = {};
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
     mockStorage = {};
   });
 
