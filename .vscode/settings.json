@@ -1,1 +1,4 @@
-{}
+{
+    "lmstudioCode.minContextLength": 16384,
+    "lmstudioCode.permissionMode": "default"
+}
