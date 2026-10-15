@@ -41,7 +41,7 @@ jobs:
         run: mkdir -p artifacts && npx vsce package --allow-missing-repository --out artifacts/local-ai-vscode.vsix
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: local-ai-vscode-vsix
           path: artifacts/local-ai-vscode.vsix
