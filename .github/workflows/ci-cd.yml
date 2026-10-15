@@ -69,7 +69,7 @@ jobs:
         run: npm ci
 
       - name: Download VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: local-ai-vscode-vsix
           path: artifacts
@@ -95,7 +95,7 @@ jobs:
 
     steps:
       - name: Download VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: local-ai-vscode-vsix
           path: artifacts
